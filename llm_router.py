@@ -251,7 +251,7 @@ def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optio
         m_name = models.get("chatgpt") or active_model or "gpt-4o"
         api_key = api_keys.get("openai") or os.getenv("OPENAI_API_KEY")
         if not api_key:
-            return generate_mock_fallback(prompt, m_name, "ChatGPT (OpenAI) API Key가 설정되지 않았습니다.", image_list, source_url=source_url)
+            raise ValueError("ChatGPT (OpenAI) API Key가 설정되지 않았습니다.")
         try:
             from openai import OpenAI
             client = OpenAI(api_key=api_key)
@@ -262,14 +262,14 @@ def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optio
             )
             return response.choices[0].message.content
         except Exception as e:
-            return generate_mock_fallback(prompt, m_name, f"ChatGPT API 호출 에러: {e}", image_list, source_url=source_url)
+            raise RuntimeError(f"ChatGPT API 호출 오류: {e}")
             
     # 2. Claude (Anthropic)
     elif "claude" in active_provider or "anthropic" in active_provider or "claude" in active_model.lower():
         m_name = models.get("claude") or active_model or "claude-3-5-sonnet-20241022"
         api_key = api_keys.get("anthropic") or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            return generate_mock_fallback(prompt, m_name, "Claude (Anthropic) API Key가 설정되지 않았습니다.", image_list, source_url=source_url)
+            raise ValueError("Claude (Anthropic) API Key가 설정되지 않았습니다.")
         try:
             from anthropic import Anthropic
             client = Anthropic(api_key=api_key)
@@ -280,14 +280,14 @@ def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optio
             )
             return response.content[0].text
         except Exception as e:
-            return generate_mock_fallback(prompt, m_name, f"Claude API 호출 에러: {e}", image_list, source_url=source_url)
+            raise RuntimeError(f"Claude API 호출 오류: {e}")
             
     # 3. Google Gemini (기본값)
     else:
         m_name = models.get("gemini") or active_model or "gemini-2.5-flash"
         api_key = api_keys.get("google") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
-            return generate_mock_fallback(prompt, m_name, "Google Gemini API Key가 설정되지 않았습니다.", image_list, source_url=source_url)
+            raise ValueError("Google Gemini API Key가 설정되지 않았습니다.")
             
         target_model = m_name
         if "gemini-2.0" in target_model:
@@ -311,7 +311,7 @@ def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optio
                     return response.text
                 raise inner_e
         except Exception as e:
-            return generate_mock_fallback(prompt, target_model, f"Gemini API 호출 에러: {e}", image_list, source_url=source_url)
+            raise RuntimeError(f"Google Gemini API 호출 오류: {e}")
 
 def extract_title_from_raw_llm(raw_text: str, default_title: str) -> str:
     """LLM의 출력 원문에서 <h1> 태그 또는 첫 단락의 제목 텍스트를 정밀 추출"""
@@ -417,7 +417,11 @@ def generate_seo_article(article_title: str, article_content: str, source_url: s
         article_content=article_content
     )
     
-    raw_output = generate_llm_response(prompt, config, image_list=image_list, source_url=source_url)
+    try:
+        raw_output = generate_llm_response(prompt, config, image_list=image_list, source_url=source_url)
+    except Exception as e:
+        return {"success": False, "error": str(e), "title": "", "content": "", "image_paths": []}
+
     raw_output_with_imgs, used_paths = inject_image_tags(raw_output, image_list)
     ai_title = extract_title_from_raw_llm(raw_output, default_title=article_title)
     
@@ -430,7 +434,7 @@ def generate_seo_article(article_title: str, article_content: str, source_url: s
         final_output = re.sub(r'\[?원문\s*기사\s*출처.*?(?:\]|\n|<|$)', '', final_output, flags=re.IGNORECASE)
         final_output += f'<br><p style="color: #888888; font-size: 13px; margin-top: 25px; border-top: 1px solid #eeeeee; padding-top: 10px;">📌 <strong>원문 기사 출처:</strong> <a href="{source_url}" target="_blank" rel="noopener noreferrer" style="color: #03c75a; text-decoration: underline;">{source_url}</a></p>'
         
-    return {"title": ai_title, "content": final_output, "image_paths": used_paths}
+    return {"success": True, "title": ai_title, "content": final_output, "image_paths": used_paths}
 
 def generate_brand_expansion_article(post_category: str, post_outline: str, image_list: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """[F-03] 개요 기반 브랜드 글 확장 프롬프트 조합 및 LLM 호출 파이프라인 (제목, 본문, 이미지 경로 반환)"""
@@ -452,13 +456,17 @@ def generate_brand_expansion_article(post_category: str, post_outline: str, imag
         image_instructions=img_instr
     )
     
-    raw_output = generate_llm_response(prompt, config, image_list=image_list)
+    try:
+        raw_output = generate_llm_response(prompt, config, image_list=image_list)
+    except Exception as e:
+        return {"success": False, "error": str(e), "title": "", "content": "", "image_paths": []}
+
     raw_output_with_imgs, used_paths = inject_image_tags(raw_output, image_list)
     default_t = f"[{post_category}] 씨제이씨협동조합 안내"
     ai_title = extract_title_from_raw_llm(raw_output, default_title=default_t)
     
     final_output = sanitize_compliance(raw_output_with_imgs, config)
-    return {"title": ai_title, "content": final_output, "image_paths": used_paths}
+    return {"success": True, "title": ai_title, "content": final_output, "image_paths": used_paths}
 
 def generate_mock_fallback(prompt: str, model_name: str, error_msg: str, image_list: Optional[List[Dict[str, Any]]] = None, source_url: str = "") -> str:
     """API 키 미설정 또는 오류 발생 시 PoC 데모용 고품질 예시 원고 반환"""

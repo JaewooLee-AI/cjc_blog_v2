@@ -800,29 +800,29 @@ with tab1:
                                     source_url=art['url'],
                                     image_list=all_db_images
                                 )
-                                st.write("2️⃣ CJC Fact DB PPL 인용 및 컴플라이언스(의료법) 검증 중...")
-                                db_manager.save_article_history(art['url'], art['title'], art['source'])
-
-                                st.session_state["generated_article"] = seo_res["content"]
-                                st.session_state["generated_title"] = seo_res["title"]
-                                st.session_state["generated_image_paths"] = seo_res.get("image_paths", [])
                                 
-                                config_chk = llm_router.load_config()
-                                google_key = config_chk.get("llm_settings", {}).get("api_keys", {}).get("google", "")
-                                if not google_key:
-                                    st.warning("💡 [⚙️ 관리자 설정] 탭에서 Google Gemini API Key를 입력하시면 실제 최신 AI 모델로 원고가 생성됩니다.")
-                                
-                                # DB에 원고 생성 이력 즉시 적재
-                                db_manager.save_post_log(
-                                    post_type="SEO_ARTICLE",
-                                    title=seo_res["title"],
-                                    content=seo_res["content"],
-                                    status="CREATED",
-                                    target_url=art['url']
-                                )
-                                status_box.update(label="✨ SEO 원고 작성 완료! (우측 포스팅 검수 창을 확인하세요)", state="complete", expanded=False)
+                                if not seo_res.get("success", True):
+                                    status_box.update(label="🚨 AI 원고 작성 실패!", state="error", expanded=True)
+                                    st.error(f"🚨 **원고 생성 중단:** {seo_res.get('error', 'LLM API 키가 설정되지 않았습니다.')}")
+                                    st.info("💡 화면 상단 **[⚙️ 관리자 설정]** 탭으로 이동하여 사용하실 AI 공급사(ChatGPT, Claude, Gemini)의 API Key를 등록한 후 다시 시도해 주세요.")
+                                else:
+                                    st.write("2️⃣ CJC Fact DB PPL 인용 및 컴플라이언스(의료법) 검증 중...")
+                                    db_manager.save_article_history(art['url'], art['title'], art['source'])
 
-                            st.toast("✨ SEO 원고 작성이 완료되었습니다! 우측 창에서 확인하세요.", icon="✅")
+                                    st.session_state["generated_article"] = seo_res["content"]
+                                    st.session_state["generated_title"] = seo_res["title"]
+                                    st.session_state["generated_image_paths"] = seo_res.get("image_paths", [])
+                                    
+                                    # DB에 원고 생성 이력 즉시 적재
+                                    db_manager.save_post_log(
+                                        post_type="SEO_ARTICLE",
+                                        title=seo_res["title"],
+                                        content=seo_res["content"],
+                                        status="CREATED",
+                                        target_url=art['url']
+                                    )
+                                    status_box.update(label="✨ SEO 원고 작성 완료! (우측 포스팅 검수 창을 확인하세요)", state="complete", expanded=False)
+                                    st.toast("✨ SEO 원고 작성이 완료되었습니다! 우측 창에서 확인하세요.", icon="✅")
                             
                             # JavaScript로 스크롤 이동
                             scroll_js = """
@@ -894,21 +894,26 @@ with tab2:
                         post_outline=post_outline,
                         image_list=all_db_images
                     )
-                    st.write("2️⃣ 1,500자 원고 구성 및 서식 정제 중...")
-                    st.session_state["generated_article"] = brand_res["content"]
-                    st.session_state["generated_title"] = brand_res["title"]
-                    st.session_state["generated_image_paths"] = brand_res.get("image_paths", [])
                     
-                    # DB에 브랜드 원고 생성 이력 즉시 적재
-                    db_manager.save_post_log(
-                        post_type="BRAND_ARTICLE",
-                        title=brand_res["title"],
-                        content=brand_res["content"],
-                        status="CREATED"
-                    )
-                    status_b.update(label="✨ 브랜드 포스팅 작성 완료! (우측 포스팅 검수 창을 확인하세요)", state="complete", expanded=False)
-
-                st.toast("✨ 브랜드 원고 작성이 완료되었습니다!", icon="✅")
+                    if not brand_res.get("success", True):
+                        status_b.update(label="🚨 AI 브랜드 원고 작성 실패!", state="error", expanded=True)
+                        st.error(f"🚨 **원고 생성 중단:** {brand_res.get('error', 'LLM API 키가 설정되지 않았습니다.')}")
+                        st.info("💡 화면 상단 **[⚙️ 관리자 설정]** 탭으로 이동하여 사용하실 AI 공급사(ChatGPT, Claude, Gemini)의 API Key를 등록한 후 다시 시도해 주세요.")
+                    else:
+                        st.write("2️⃣ 1,500자 원고 구성 및 서식 정제 중...")
+                        st.session_state["generated_article"] = brand_res["content"]
+                        st.session_state["generated_title"] = brand_res["title"]
+                        st.session_state["generated_image_paths"] = brand_res.get("image_paths", [])
+                        
+                        # DB에 브랜드 원고 생성 이력 즉시 적재
+                        db_manager.save_post_log(
+                            post_type="BRAND_ARTICLE",
+                            title=brand_res["title"],
+                            content=brand_res["content"],
+                            status="CREATED"
+                        )
+                        status_b.update(label="✨ 브랜드 포스팅 작성 완료! (우측 포스팅 검수 창을 확인하세요)", state="complete", expanded=False)
+                        st.toast("✨ 브랜드 원고 작성이 완료되었습니다!", icon="✅")
 
     with b_col2:
         st.markdown("### 📄 완성된 브랜드 포스팅 미리보기")
