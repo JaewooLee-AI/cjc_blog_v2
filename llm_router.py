@@ -403,15 +403,6 @@ def generate_seo_article(article_title: str, article_content: str, source_url: s
     
     # 의료법 및 금기어 치환 + 네이버 에디터 포맷터 통과
     final_output = sanitize_compliance(raw_output_with_imgs, config)
-    
-    # 출처 링크 보장
-    if source_url and source_url not in final_output:
-        final_output += f"""
-<br>
-<p style="text-align: center; color: #555; font-size: 14px;">
-    📌 <strong>관련 트렌드 뉴스 출처 기사 보기:</strong> <a href="{source_url}" target="_blank" style="color: #03c75a; font-weight: bold; text-decoration: underline;">{source_url}</a>
-</p>
-"""
     return {"title": ai_title, "content": final_output, "image_paths": used_paths}
 
 def generate_brand_expansion_article(post_category: str, post_outline: str, image_list: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
@@ -472,13 +463,6 @@ def generate_mock_fallback(prompt: str, model_name: str, error_msg: str, image_l
 <h2>3. 소상공인 상생 및 가발 창업·두피 창업 교육</h2>
 {img_ph3}
 <p>저희 협동조합은 가발공장 OEM 연동과 가발창업, 두피창업교육 프로그램을 통해 일선 매장을 운영하시는 소상공인분들과 예비 창업자분들의 성장을 든든하게 조력하고 있습니다. 중소벤처기업부 장관상 및 고용노동부 사회적기업 인증으로 검증된 기술력과 상생의 가치를 직접 경험해 보세요.</p>
-"""
-    if source_url:
-        mock_body += f"""
-<br>
-<p style="text-align: center; color: #555; font-size: 14px;">
-    📌 <strong>관련 트렌드 뉴스 출처 기사 보기:</strong> <a href="{source_url}" target="_blank" style="color: #03c75a; font-weight: bold; text-decoration: underline;">{source_url}</a>
-</p>
 """
     return mock_body
 
