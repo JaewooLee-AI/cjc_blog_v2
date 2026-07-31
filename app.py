@@ -542,12 +542,8 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
                     suggested_title = audit_res.get("suggested_title", edited_title)
                     st.session_state["generated_title"] = suggested_title
                     st.session_state["generated_article"] = restored_suggested
-                    st.session_state[key_last_article] = restored_suggested
-                    st.session_state[key_editor] = clean_html_for_editor(
-                        restored_suggested,
-                        st.session_state.get("generated_image_paths", [])
-                    )
-                    st.session_state[key_title] = suggested_title
+                    # 다음 rerun 시 상단에서 widget 생성 전에 키를 갱신하도록 동기화 마커 초기화
+                    st.session_state[key_last_article] = ""
                     st.toast("✨ AI 교정 원고로 1클릭 업데이트되었습니다!", icon="🚀")
                     st.rerun()
 
@@ -602,7 +598,7 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
                                     st.session_state["generated_article"] = updated_html
                                     current_images[idx] = new_path
                                     st.session_state["generated_image_paths"] = current_images
-                                    st.session_state.pop(f"{tab_key}_edit_content_input", None)
+                                    st.session_state[key_last_article] = ""
                                     st.toast(f"📷 이미지 #{idx+1}이 DB 사진으로 교체되었습니다!", icon="🔄")
                                     st.rerun()
 
