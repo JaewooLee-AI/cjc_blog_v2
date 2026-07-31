@@ -200,8 +200,9 @@ def run_worker():
         marker_counter[0] += 1
         return f'<p style="color: #888888; text-align: center; font-size: 14px; margin: 15px 0;">[📷 PHOTO_LOCATION_MARKER_{marker_counter[0]}]</p>'
 
-    combined_pattern = r'(?:<br\s*/?>\s*)?(?:<div[^>]*>\s*)?<img\s+[^>]*?src=["\'][^"\']+["\'][^>]*?>(?:\s*<p[^>]*>.*?</p>)?(?:\s*</div>)?(?:\s*<br\s*/?>)?'
-    clean_text_html = re.sub(combined_pattern, replace_with_marker, html_content, flags=re.IGNORECASE | re.DOTALL)
+    # <img> 태그 및 <img>를 감싸는 단순 <div>만 치환 (절대 다음 <p> 텍스트 문단을 삼키지 않음!)
+    safe_img_pattern = r'(?:<br\s*/?>\s*)?(?:<div[^>]*>\s*)?<img\s+[^>]*?src=["\'][^"\']+["\'][^>]*?>(?:\s*</div>)?(?:\s*<br\s*/?>)?'
+    clean_text_html = re.sub(safe_img_pattern, replace_with_marker, html_content, flags=re.IGNORECASE)
 
     print(f"Total markers created: {marker_counter[0]}")
     print(f"Total images to upload: {len(image_paths) if image_paths else 0}")
