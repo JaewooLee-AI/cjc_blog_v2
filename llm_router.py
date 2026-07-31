@@ -6,10 +6,30 @@ from typing import Dict, Any, Optional, List, Tuple
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 
 def load_config() -> Dict[str, Any]:
-    """config.json 파일 실시간 로드"""
+    """config.json 및 .env 환경변수 동시 실시간 로드 (보안 유지를 위한 .env 자동 연동)"""
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ[k.strip()] = v.strip().strip('"').strip("'")
+        except Exception:
+            pass
+
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            cfg = json.load(f)
+            api_keys = cfg.setdefault("llm_settings", {}).setdefault("api_keys", {})
+            if not api_keys.get("google"):
+                api_keys["google"] = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
+            if not api_keys.get("openai"):
+                api_keys["openai"] = os.getenv("OPENAI_API_KEY", "")
+            if not api_keys.get("anthropic"):
+                api_keys["anthropic"] = os.getenv("ANTHROPIC_API_KEY", "")
+            return cfg
     return {}
 
 def format_html_for_naver_editor(html_text: str) -> str:
