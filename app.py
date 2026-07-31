@@ -452,23 +452,32 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
         st.markdown("##### ✏️ 제목 및 본문 수동 수정 / LLM AI 재검수")
         st.caption("제목과 본문을 직접 수정한 후, [🤖 수정한 원고 AI 재검토 요청]을 누르시면 SEO 점수, 가독성, 의료법/표시광고법 준수 여부를 AI가 자동 검수합니다.")
         
-        edited_title = st.text_input(
-            "📌 글 제목 수정",
-            value=st.session_state.get("generated_title", ""),
-            key=f"{tab_key}_edit_title_input"
-        )
-        
         # Base64 코드 제외하고 깔끔한 텍스트로 렌더링
         editor_clean_content = clean_html_for_editor(
             st.session_state.get("generated_article", ""),
             st.session_state.get("generated_image_paths", [])
         )
         
+        # 세션 키 강제 동기화 (Base64가 남아있거나 갱신 필요한 경우)
+        key_editor = f"{tab_key}_edit_content_input"
+        key_title = f"{tab_key}_edit_title_input"
+        
+        if key_editor in st.session_state and "data:image/" in str(st.session_state[key_editor]):
+            st.session_state[key_editor] = editor_clean_content
+        if key_title in st.session_state and not st.session_state[key_title]:
+            st.session_state[key_title] = st.session_state.get("generated_title", "")
+        
+        edited_title = st.text_input(
+            "📌 글 제목 수정",
+            value=st.session_state.get("generated_title", ""),
+            key=key_title
+        )
+        
         edited_content = st.text_area(
             "📝 본문 HTML/텍스트 수동 편집",
             value=editor_clean_content,
             height=320,
-            key=f"{tab_key}_edit_content_input"
+            key=key_editor
         )
 
         c_act1, c_act2 = st.columns([1, 1])
@@ -543,7 +552,7 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
                             st.image(img_path, use_container_width=True)
                         else:
                             st.warning(f"경로 미존재: {img_path}")
-                    
+
                     with img_col_right:
                         # 1. 등록된 DB 이미지 드롭다운 교체
                         current_db_match = next((img for img in all_db_images if img["filepath"] == img_path), None)
@@ -576,6 +585,7 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
                                     st.session_state["generated_article"] = updated_html
                                     current_images[idx] = new_path
                                     st.session_state["generated_image_paths"] = current_images
+                                    st.session_state.pop(f"{tab_key}_edit_content_input", None)
                                     st.toast(f"📷 이미지 #{idx+1}이 DB 사진으로 교체되었습니다!", icon="🔄")
                                     st.rerun()
 
@@ -587,6 +597,7 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
                             st.session_state["generated_article"] = updated_html
                             current_images.pop(idx)
                             st.session_state["generated_image_paths"] = current_images
+                            st.session_state.pop(f"{tab_key}_edit_content_input", None)
                             st.toast(f"🗑️ 이미지 #{idx+1}이 원고에서 삭제되었습니다.", icon="✂️")
                             st.rerun()
 
