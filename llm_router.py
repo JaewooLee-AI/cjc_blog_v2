@@ -404,9 +404,11 @@ def generate_seo_article(article_title: str, article_content: str, source_url: s
     # 의료법 및 금기어 치환 + 네이버 에디터 포맷터 통과
     final_output = sanitize_compliance(raw_output_with_imgs, config)
     
-    # 원문 기사 출처 링크 보장 (중복 방지: 본문에 출처 URL이 없는 경우에만 1회 추가)
-    if source_url and source_url not in final_output:
-        final_output += f'<br><p style="color: #888888; font-size: 13px; margin-top: 20px;">📌 <strong>원문 기사 출처:</strong> <a href="{source_url}" target="_blank" rel="noopener noreferrer" style="color: #03c75a; text-decoration: underline;">{source_url}</a></p>'
+    # 본문 내 어설픈 LLM 출처 텍스트 제거 후, 하단에 100% 클릭 가능한 원문 기사 출처 링크 보장 추가
+    if source_url:
+        final_output = re.sub(r'<p[^>]*>\s*\[?원문\s*기사\s*출처.*?<\/p>', '', final_output, flags=re.IGNORECASE | re.DOTALL)
+        final_output = re.sub(r'\[?원문\s*기사\s*출처.*?(?:\]|\n|<|$)', '', final_output, flags=re.IGNORECASE)
+        final_output += f'<br><p style="color: #888888; font-size: 13px; margin-top: 25px; border-top: 1px solid #eeeeee; padding-top: 10px;">📌 <strong>원문 기사 출처:</strong> <a href="{source_url}" target="_blank" rel="noopener noreferrer" style="color: #03c75a; text-decoration: underline;">{source_url}</a></p>'
         
     return {"title": ai_title, "content": final_output, "image_paths": used_paths}
 
