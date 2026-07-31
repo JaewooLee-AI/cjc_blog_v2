@@ -1,0 +1,12 @@
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true
+port = 8501
+
+[ui]
+hideModeBar = "native"
+
+[theme]
+base = "light"

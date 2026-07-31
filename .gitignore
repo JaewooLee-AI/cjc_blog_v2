@@ -1,0 +1,12 @@
+Library/
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+naver_user_data/
+temp_posts/
+.playwright-mcp/
+*.db
+*.log
+naver_state.json
+paste_status.json

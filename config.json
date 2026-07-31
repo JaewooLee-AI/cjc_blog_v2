@@ -1,0 +1,88 @@
+{
+  "llm_settings": {
+    "active_provider": "Gemini",
+    "active_model": "gemini-2.5-flash",
+    "models": {
+      "chatgpt": "gpt-4o",
+      "claude": "claude-3-5-sonnet-20241022",
+      "gemini": "gemini-2.5-flash"
+    },
+    "api_keys": {
+      "openai": "",
+      "anthropic": "",
+      "google": ""
+    }
+  },
+  "persona_guide": {
+    "system_persona": "대한가발협회 소속 씨제이씨협동조합의 친절하고 전문적인 수석 뷰티 에디터이자 마케팅 전문가",
+    "few_shot_samples": [
+      {
+        "title": "[씨제이씨협동조합] 10분 만에 끝나는 혁신적인 ATUM 3D 맞춤 가발 스캔 체험기",
+        "content": "안녕하세요! 씨제이씨협동조합입니다. 기존에 석고나 비닐로 본을 뜨며 한 달 넘게 기다리셨던 맞춤가발 제작, 많이 답답하셨죠? 이제는 24개 초정밀 센서와 3D 스테레오 카메라가 탑재된 ATUM 3D 두상측정기로 단 10분 만에 정밀 스캔이 완료됩니다. KOTITI 시험인증을 거친 안전한 키노피스(KINO PIECE) 친환경 가발을 7~10일 만에 빠르게 만나보세요."
+      },
+      {
+        "title": "[소상공인 상생] 가발 창업 및 두피 전문 교육 5기 수강생 모집 안내",
+        "content": "안녕하세요, 씨제이씨협동조합 조합원과 예비 창업자 여러분! 60년 정체된 가발 산업을 디지털 대전환(AX)으로 이끄는 씨제이씨협동조합에서 스마트 팩토리 기반 가발창업 및 두피창업교육 수강생을 모집합니다. 공장 OEM 직연동 서비스와 독자적인 기술력으로 소상공인분들의 성공 창업을 든든하게 조력합니다."
+      }
+    ]
+  },
+  "fact_database": {
+    "company_facts": [
+      "ATUM 3D 두상측정기: 24개 초정밀 센서, 3D 스테레오 카메라 및 레이저 마커로 10분 이내 두상 오차 없이 정밀 스캔",
+      "키노피스(KINO PIECE) 브랜드: KOTITI 시험기관을 통한 폼알데하이드(20mg/kg 이하) 및 톨루엔(1,000mg/kg 이하) 엄격 통제 안전 인증",
+      "친환경 ESG 공정: 석고 및 비닐 본뜨기 폐기물 없는 3D 데이터 기반 스마트 팩토리 제조",
+      "획기적인 배송 단축: 기존 1개월 이상 소요되던 제작 배송 기간을 7일~10일 수준으로 단축",
+      "씨제이씨협동조합: 사단법인 대한가발협회 주축 설립, 고용노동부 사회적기업 및 중기부장관상 수상 우수협동조합"
+    ]
+  },
+  "compliance": {
+    "whitelist_seo": [
+      "가발",
+      "탈모",
+      "맞춤가발",
+      "항암가발",
+      "남성가발",
+      "탈모가발",
+      "두피케어",
+      "3D두상측정",
+      "ATUM",
+      "키노피스",
+      "가발창업",
+      "두피창업교육",
+      "가발공장OEM",
+      "스마트팩토리가발"
+    ],
+    "blacklist_map": {
+      "완벽한 탈모 치료": "맞춤가발을 통한 스타일 보완",
+      "탈모 치료": "맞춤가발 스타일 보완",
+      "완벽 치료": "스타일 개선 및 보완",
+      "완벽한 치료": "스타일 개선 및 보완",
+      "치료 가능": "스타일 보완 가능",
+      "완치 가능": "두피 보완 가능",
+      "탈모 완치": "두피 환경 개선 및 스타일 보완",
+      "모발 영구 재생": "건강한 두피 관리",
+      "100% 치료": "스타일 개선",
+      "병원 치료 대체": "전문 케어 및 스타일링",
+      "의학적 효능": "스타일링 개선 및 만족도 극대화",
+      "부작용 제로": "안전성 검증 완료"
+    }
+  },
+  "news_collection": {
+    "enable_multilingual_keywords": true,
+    "multilingual_keywords": {
+      "ko": ["가발", "탈모", "맞춤가발", "두피케어", "항암가발", "가발제작", "인조가발", "남성가발"],
+      "en": ["wig", "hair loss", "alopecia", "scalp care", "custom wig", "hair replacement", "toupee", "medical wig"]
+    },
+    "enable_semantic_duplicate_check": true,
+    "enable_relevance_filter": true,
+    "relevance_threshold": 2.0,
+    "news_sources": ["google_news", "naver_news"]
+  },
+  "google_sheets": {
+    "spreadsheet_url": "",
+    "sheet_name": "CJC_Blog_Logs"
+  },
+  "naver_settings": {
+    "naver_blog_id": "jwl1722"
+  }
+}
