@@ -480,13 +480,11 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
         
         edited_title = st.text_input(
             "📌 글 제목 수정",
-            value=st.session_state.get("generated_title", ""),
             key=key_title
         )
         
         edited_content = st.text_area(
             "📝 본문 HTML/텍스트 수동 편집",
-            value=st.session_state.get(key_editor, ""),
             height=320,
             key=key_editor
         )
