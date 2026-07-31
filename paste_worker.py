@@ -122,6 +122,49 @@ def upload_single_photo(page, editor_frame, file_path: str) -> bool:
 
     return False
 
+def select_and_focus_marker(editor_frame, page, marker_str: str) -> bool:
+    """
+    네이버 스마트에디터 ONE DOM 내에서 마커 텍스트 노드를 찾아
+    정확히 해당 단락 위치로 스크롤 및 커서 포커스를 100% 고정한 뒤 마커 텍스트 삭제
+    """
+    try:
+        # JS TreeWalker로 exact marker_str을 포함하는 텍스트 노드 탐색 및 텍스트 선택(Selection) 설정
+        found = editor_frame.evaluate("""(markerText) => {
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+            let node;
+            while (node = walker.nextNode()) {
+                if (node.nodeValue && node.nodeValue.includes(markerText)) {
+                    let parent = node.parentElement;
+                    while (parent && !parent.classList.contains('se-text-paragraph') && parent.tagName !== 'P' && parent.tagName !== 'DIV') {
+                        parent = parent.parentElement;
+                    }
+                    const targetEl = parent || node.parentElement;
+                    targetEl.scrollIntoView({ behavior: 'auto', block: 'center' });
+                    
+                    const range = document.createRange();
+                    range.selectNodeContents(targetEl);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    return true;
+                }
+            }
+            return false;
+        }""", marker_str)
+
+        if found:
+            print(f"✅ Successfully located and focused marker '{marker_str}' via DOM Selection API!")
+            human_delay(0.2, 0.4)
+            page.keyboard.press("Backspace")
+            human_delay(0.4, 0.6)
+            return True
+        else:
+            print(f"⚠️ Could not find marker '{marker_str}' via JS TreeWalker")
+            return False
+    except Exception as e:
+        print(f"select_and_focus_marker error for '{marker_str}': {e}")
+        return False
+
 def run_worker():
     if len(sys.argv) < 4:
         write_status("ERROR", "Invalid arguments passed to worker.")
@@ -149,32 +192,16 @@ def run_worker():
         write_status("ERROR", f"Failed to read content file: {e}")
         return
 
-    # HTML 내 이미지 태그 컨테이너를 위치 추적용 고유 텍스트 마커로 치환 (미리보기 위치 100% 일치)
-    # AI가 선택한 이미지 순서대로 마커 생성
-
     print(f"📷 Available images to upload: {len(image_paths) if image_paths else 0}")
 
-    # 마커 생성 함수
+    # 마커 생성 함수: html_content 내 <img> 태그들을 top-to-bottom 순서대로 고유 마커로 단 1회 통합 치환
     marker_counter = [0]
     def replace_with_marker(match):
         marker_counter[0] += 1
-        return f'<p style="color: #888888; text-align: center; font-size: 14px;">[📷 PHOTO_LOCATION_MARKER_{marker_counter[0]}]</p>'
+        return f'<p style="color: #888888; text-align: center; font-size: 14px; margin: 15px 0;">[📷 PHOTO_LOCATION_MARKER_{marker_counter[0]}]</p>'
 
-    # 다양한 이미지 태그 패턴 감지 및 치환
-    img_patterns = [
-        r'<br\s*/?><div style="text-align: center; margin: 25px 0;"><img[^>]+><p[^>]*>.*?</p></div><br\s*/?>',  # 기존 패턴
-        r'<div style="text-align: center; margin: 25px 0;"><img[^>]+><p[^>]*>.*?</p></div>',  # br 태그 없는 버전
-        r'<p style="text-align: center;[^"]*"><img[^>]+></p>',  # p 태그 안의 이미지
-        r'<img[^>]+>',  # 개별 이미지 태그
-        r'<div[^>]*><img[^>]+></div>',  # div 안의 이미지
-    ]
-
-    clean_text_html = html_content
-    for pattern in img_patterns:
-        matches_before = len(re.findall(pattern, clean_text_html, flags=re.IGNORECASE | re.DOTALL))
-        if matches_before > 0:
-            print(f"Pattern '{pattern[:50]}...' found {matches_before} matches")
-        clean_text_html = re.sub(pattern, replace_with_marker, clean_text_html, flags=re.IGNORECASE | re.DOTALL)
+    combined_pattern = r'(?:<br\s*/?>\s*)?(?:<div[^>]*>\s*)?<img\s+[^>]*?src=["\'][^"\']+["\'][^>]*?>(?:\s*<p[^>]*>.*?</p>)?(?:\s*</div>)?(?:\s*<br\s*/?>)?'
+    clean_text_html = re.sub(combined_pattern, replace_with_marker, html_content, flags=re.IGNORECASE | re.DOTALL)
 
     print(f"Total markers created: {marker_counter[0]}")
     print(f"Total images to upload: {len(image_paths) if image_paths else 0}")
@@ -318,79 +345,27 @@ def run_worker():
                         marker_str = f"[📷 PHOTO_LOCATION_MARKER_{img_idx}]"
                         print(f"Locating exact marker '{marker_str}' for photo #{img_idx}/{len(abs_valid_paths)}...")
 
-                        target_p = None
-                        # 다양한 선택자 시도하여 마커가 있는 p 태그 찾기
-                        p_selectors = [
-                            ".se-component-text p",
-                            ".se-text-paragraph",
-                            "p",
-                            ".se-module-text p",
-                            ".se-paragraph p"
-                        ]
-
-                        all_p = []
-                        for selector in p_selectors:
-                            try:
-                                found_elements = editor_frame.query_selector_all(selector)
-                                if found_elements:
-                                    all_p.extend(found_elements)
-                                    print(f"Found {len(found_elements)} p elements with selector: {selector}")
-                            except Exception as e:
-                                print(f"Error with selector {selector}: {e}")
-
-                        if all_p:
-                            print(f"Total p elements found: {len(all_p)}")
-                            for idx, p in enumerate(all_p):
+                        focused = select_and_focus_marker(editor_frame, page, marker_str)
+                        if not focused:
+                            print(f"Falling back to Playwright query selector for marker '{marker_str}'...")
+                            all_p = editor_frame.query_selector_all("p, .se-text-paragraph, .se-component-text p")
+                            for p in all_p:
                                 try:
-                                    p_text = p.inner_text()
-                                    print(f"Checking p element #{idx+1}: '{p_text[:100]}...'")  # 디버깅을 위해 앞부분만 출력
-
-                                    # 정확한 일치뿐만 아니라 부분 일치도 허용
-                                    if marker_str in p_text:
-                                        target_p = p
-                                        print(f"✅ Found matching marker element for photo #{img_idx}!")
+                                    if marker_str in p.inner_text():
+                                        p.scroll_into_view_if_needed()
+                                        p.click(click_count=3, force=True)
+                                        human_delay(0.2, 0.3)
+                                        page.keyboard.press("Backspace")
+                                        human_delay(0.4, 0.6)
+                                        focused = True
                                         break
-                                except Exception as e:
-                                    print(f"Error checking p element #{idx}: {e}")
-
-                        if not target_p:
-                            print(f"⚠️ Warning: Could not find marker '{marker_str}' in any p element")
-                            print(f"Searching in all editable content...")
-                            # 추가적인 폴백: 전체 문서 내용에서 마커 검색 시도
-                            try:
-                                body_content = editor_frame.inner_text()
-                                print(f"Body content preview (first 500 chars): {body_content[:500]}")
-                                if marker_str in body_content:
-                                    print(f"✅ Marker found in body content, but could not locate specific p element")
-                            except Exception as e:
-                                print(f"Error searching body content: {e}")
-
-                        if target_p:
-                            try:
-                                # 트리플 클릭(click_count=3)으로 해당 마커 단락 라인만 영역 지정 (전체 문서 선택 modifier+a 절대 금지)
-                                target_p.click(click_count=3, force=True)
-                                human_delay(0.2, 0.3)
-                                page.keyboard.press("Backspace")
-                                human_delay(0.3, 0.5)
-                                print(f"✅ Successfully cleared marker line for photo #{img_idx}")
-                            except Exception as click_err:
-                                print(f"Marker line clear note: {click_err}")
-                        else:
-                            print(f"⚠️ Could not find marker for photo #{img_idx}, uploading at current cursor position instead")
-                            # 마커를 못 찾은 경우, 커서를 현재 위치로 이동하여 이미지 업로드 시도
-                            try:
-                                # 현재 커서 위치로 클릭하여 활성화
-                                body_el = editor_frame.query_selector(".se-main-container, .se-component-text, .se-content")
-                                if body_el:
-                                    body_el.click(force=True)
-                                    human_delay(0.3, 0.5)
-                            except Exception as cursor_err:
-                                print(f"Cursor positioning error: {cursor_err}")
+                                except Exception:
+                                    pass
 
                         print(f"Uploading single photo #{img_idx} at exact marker location...")
                         upload_success = upload_single_photo(page, editor_frame, single_path)
                         if upload_success:
-                            print(f"✅ Photo #{img_idx} uploaded successfully")
+                            print(f"✅ Photo #{img_idx} uploaded successfully at marker location!")
                         else:
                             print(f"❌ Photo #{img_idx} upload failed")
 
