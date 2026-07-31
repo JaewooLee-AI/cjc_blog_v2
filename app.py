@@ -452,20 +452,31 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
         st.markdown("##### ✏️ 제목 및 본문 수동 수정 / LLM AI 재검수")
         st.caption("제목과 본문을 직접 수정한 후, [🤖 수정한 원고 AI 재검토 요청]을 누르시면 SEO 점수, 가독성, 의료법/표시광고법 준수 여부를 AI가 자동 검수합니다.")
         
-        # Base64 코드 제외하고 깔끔한 텍스트로 렌더링
-        editor_clean_content = clean_html_for_editor(
-            st.session_state.get("generated_article", ""),
-            st.session_state.get("generated_image_paths", [])
-        )
-        
-        # 세션 키 강제 동기화 (Base64가 남아있거나 갱신 필요한 경우)
         key_editor = f"{tab_key}_edit_content_input"
         key_title = f"{tab_key}_edit_title_input"
-        
-        if key_editor in st.session_state and "data:image/" in str(st.session_state[key_editor]):
-            st.session_state[key_editor] = editor_clean_content
-        if key_title in st.session_state and not st.session_state[key_title]:
-            st.session_state[key_title] = st.session_state.get("generated_title", "")
+        key_last_article = f"{tab_key}_last_synced_article"
+
+        current_article = st.session_state.get("generated_article", "")
+        current_title = st.session_state.get("generated_title", "")
+        last_article = st.session_state.get(key_last_article, "")
+
+        # 새로 원고가 생성되었거나 원고 내용이 변경되었으면 편집기 세션 값을 새 원고로 동기화!
+        if current_article != last_article:
+            st.session_state[key_last_article] = current_article
+            st.session_state[key_editor] = clean_html_for_editor(
+                current_article,
+                st.session_state.get("generated_image_paths", [])
+            )
+            st.session_state[key_title] = current_title
+            st.session_state.pop(f"{tab_key}_audit_result", None)
+
+        if key_editor not in st.session_state:
+            st.session_state[key_editor] = clean_html_for_editor(
+                current_article,
+                st.session_state.get("generated_image_paths", [])
+            )
+        if key_title not in st.session_state:
+            st.session_state[key_title] = current_title
         
         edited_title = st.text_input(
             "📌 글 제목 수정",
@@ -475,7 +486,7 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
         
         edited_content = st.text_area(
             "📝 본문 HTML/텍스트 수동 편집",
-            value=editor_clean_content,
+            value=st.session_state.get(key_editor, ""),
             height=320,
             key=key_editor
         )
@@ -489,6 +500,7 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
                 restored_article = restore_html_from_editor(sanitized_content)
                 st.session_state["generated_title"] = sanitized_title
                 st.session_state["generated_article"] = restored_article
+                st.session_state[key_last_article] = restored_article
                 st.toast("💾 수정 내용이 원고에 반영되었습니다!", icon="✅")
                 st.rerun()
 
@@ -529,8 +541,15 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
                 st.caption(f"**추천 제목:** {audit_res.get('suggested_title', '')}")
                 if st.button("✨ AI 추천 교정 원고 1클릭 반영", key=f"{tab_key}_apply_audit_btn", type="primary", use_container_width=True):
                     restored_suggested = restore_html_from_editor(audit_res.get("suggested_content", edited_content))
-                    st.session_state["generated_title"] = audit_res.get("suggested_title", edited_title)
+                    suggested_title = audit_res.get("suggested_title", edited_title)
+                    st.session_state["generated_title"] = suggested_title
                     st.session_state["generated_article"] = restored_suggested
+                    st.session_state[key_last_article] = restored_suggested
+                    st.session_state[key_editor] = clean_html_for_editor(
+                        restored_suggested,
+                        st.session_state.get("generated_image_paths", [])
+                    )
+                    st.session_state[key_title] = suggested_title
                     st.toast("✨ AI 교정 원고로 1클릭 업데이트되었습니다!", icon="🚀")
                     st.rerun()
 
