@@ -217,7 +217,7 @@ def test_llm_connection(provider: str, model_name: str, api_key: str) -> Dict[st
             "message": f"⚠️ 알 수 없는 공급사('{provider}')입니다."
         }
 
-def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optional[List[Dict[str, Any]]] = None) -> str:
+def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optional[List[Dict[str, Any]]] = None, source_url: str = "") -> str:
     """선택된 LLM 공급사(ChatGPT, Claude, Gemini) 및 설정된 모델/API Key별 호출 분기 처리"""
     llm_settings = config.get("llm_settings", {})
     active_provider = llm_settings.get("active_provider", "Gemini").lower()
@@ -231,7 +231,7 @@ def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optio
         m_name = models.get("chatgpt") or active_model or "gpt-4o"
         api_key = api_keys.get("openai") or os.getenv("OPENAI_API_KEY")
         if not api_key:
-            return generate_mock_fallback(prompt, m_name, "ChatGPT (OpenAI) API Key가 설정되지 않았습니다.", image_list)
+            return generate_mock_fallback(prompt, m_name, "ChatGPT (OpenAI) API Key가 설정되지 않았습니다.", image_list, source_url=source_url)
         try:
             from openai import OpenAI
             client = OpenAI(api_key=api_key)
@@ -242,14 +242,14 @@ def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optio
             )
             return response.choices[0].message.content
         except Exception as e:
-            return generate_mock_fallback(prompt, m_name, f"ChatGPT API 호출 에러: {e}", image_list)
+            return generate_mock_fallback(prompt, m_name, f"ChatGPT API 호출 에러: {e}", image_list, source_url=source_url)
             
     # 2. Claude (Anthropic)
     elif "claude" in active_provider or "anthropic" in active_provider or "claude" in active_model.lower():
         m_name = models.get("claude") or active_model or "claude-3-5-sonnet-20241022"
         api_key = api_keys.get("anthropic") or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            return generate_mock_fallback(prompt, m_name, "Claude (Anthropic) API Key가 설정되지 않았습니다.", image_list)
+            return generate_mock_fallback(prompt, m_name, "Claude (Anthropic) API Key가 설정되지 않았습니다.", image_list, source_url=source_url)
         try:
             from anthropic import Anthropic
             client = Anthropic(api_key=api_key)
@@ -260,14 +260,14 @@ def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optio
             )
             return response.content[0].text
         except Exception as e:
-            return generate_mock_fallback(prompt, m_name, f"Claude API 호출 에러: {e}", image_list)
+            return generate_mock_fallback(prompt, m_name, f"Claude API 호출 에러: {e}", image_list, source_url=source_url)
             
     # 3. Google Gemini (기본값)
     else:
         m_name = models.get("gemini") or active_model or "gemini-2.5-flash"
         api_key = api_keys.get("google") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
-            return generate_mock_fallback(prompt, m_name, "Google Gemini API Key가 설정되지 않았습니다.", image_list)
+            return generate_mock_fallback(prompt, m_name, "Google Gemini API Key가 설정되지 않았습니다.", image_list, source_url=source_url)
             
         target_model = m_name
         if "gemini-2.0" in target_model:
@@ -291,7 +291,7 @@ def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optio
                     return response.text
                 raise inner_e
         except Exception as e:
-            return generate_mock_fallback(prompt, target_model, f"Gemini API 호출 에러: {e}", image_list)
+            return generate_mock_fallback(prompt, target_model, f"Gemini API 호출 에러: {e}", image_list, source_url=source_url)
 
 def extract_title_from_raw_llm(raw_text: str, default_title: str) -> str:
     """LLM의 출력 원문에서 <h1> 태그 또는 첫 단락의 제목 텍스트를 정밀 추출"""
@@ -397,12 +397,21 @@ def generate_seo_article(article_title: str, article_content: str, source_url: s
         article_content=article_content
     )
     
-    raw_output = generate_llm_response(prompt, config, image_list=image_list)
+    raw_output = generate_llm_response(prompt, config, image_list=image_list, source_url=source_url)
     raw_output_with_imgs, used_paths = inject_image_tags(raw_output, image_list)
     ai_title = extract_title_from_raw_llm(raw_output, default_title=article_title)
     
     # 의료법 및 금기어 치환 + 네이버 에디터 포맷터 통과
     final_output = sanitize_compliance(raw_output_with_imgs, config)
+    
+    # 출처 링크 보장
+    if source_url and source_url not in final_output:
+        final_output += f"""
+<br>
+<p style="text-align: center; color: #555; font-size: 14px;">
+    📌 <strong>관련 트렌드 뉴스 출처 기사 보기:</strong> <a href="{source_url}" target="_blank" style="color: #03c75a; font-weight: bold; text-decoration: underline;">{source_url}</a>
+</p>
+"""
     return {"title": ai_title, "content": final_output, "image_paths": used_paths}
 
 def generate_brand_expansion_article(post_category: str, post_outline: str, image_list: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
@@ -433,7 +442,7 @@ def generate_brand_expansion_article(post_category: str, post_outline: str, imag
     final_output = sanitize_compliance(raw_output_with_imgs, config)
     return {"title": ai_title, "content": final_output, "image_paths": used_paths}
 
-def generate_mock_fallback(prompt: str, model_name: str, error_msg: str, image_list: Optional[List[Dict[str, Any]]] = None) -> str:
+def generate_mock_fallback(prompt: str, model_name: str, error_msg: str, image_list: Optional[List[Dict[str, Any]]] = None, source_url: str = "") -> str:
     """API 키 미설정 또는 오류 발생 시 PoC 데모용 고품질 예시 원고 반환"""
     config = load_config()
     facts = config.get("fact_database", {}).get("company_facts", [])
@@ -464,8 +473,13 @@ def generate_mock_fallback(prompt: str, model_name: str, error_msg: str, image_l
 {img_ph3}
 <p>저희 협동조합은 가발공장 OEM 연동과 가발창업, 두피창업교육 프로그램을 통해 일선 매장을 운영하시는 소상공인분들과 예비 창업자분들의 성장을 든든하게 조력하고 있습니다. 중소벤처기업부 장관상 및 고용노동부 사회적기업 인증으로 검증된 기술력과 상생의 가치를 직접 경험해 보세요.</p>
 """
-    if error_msg:
-        mock_body += f"\n<p><em>(참고: 현재 [{model_name}] API 키 상태: [{error_msg}])</em></p>"
+    if source_url:
+        mock_body += f"""
+<br>
+<p style="text-align: center; color: #555; font-size: 14px;">
+    📌 <strong>관련 트렌드 뉴스 출처 기사 보기:</strong> <a href="{source_url}" target="_blank" style="color: #03c75a; font-weight: bold; text-decoration: underline;">{source_url}</a>
+</p>
+"""
     return mock_body
 
 # 시맨틱 유사도 검증 템플릿 (기획 문서[F-01] 2차 검증 로직)

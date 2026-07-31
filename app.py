@@ -794,6 +794,11 @@ with tab1:
                                 st.session_state["generated_title"] = seo_res["title"]
                                 st.session_state["generated_image_paths"] = seo_res.get("image_paths", [])
                                 
+                                config_chk = llm_router.load_config()
+                                google_key = config_chk.get("llm_settings", {}).get("api_keys", {}).get("google", "")
+                                if not google_key:
+                                    st.warning("💡 [⚙️ 관리자 설정] 탭에서 Google Gemini API Key를 입력하시면 실제 최신 AI 모델로 원고가 생성됩니다.")
+                                
                                 # DB에 원고 생성 이력 즉시 적재
                                 db_manager.save_post_log(
                                     post_type="SEO_ARTICLE",
