@@ -381,6 +381,50 @@ def delete_nth_image_in_html(html: str, nth: int) -> str:
     return html
 
 
+def clean_html_for_editor(html: str, image_paths: Optional[List[str]] = None) -> str:
+    """HTML 본문 내의 거대한 Base64 Data URI (data:image/...;base64,...)를 깔끔한 파일 경로(src="uploaded_images/...")로 치환하여 편집기 텍스트 상자에 노출"""
+    if not html:
+        return ""
+    
+    import re
+    image_paths = image_paths or []
+    
+    # Base64 src를 찾아서 순서대로 image_paths의 파일 경로로 교체
+    pattern = r'src=["\']data:image/[^"\']+["\']'
+    matches = list(re.finditer(pattern, html))
+    
+    clean_html = html
+    for idx, match in reversed(list(enumerate(matches))):
+        start, end = match.span()
+        if idx < len(image_paths):
+            path = image_paths[idx]
+            clean_src = f'src="{path}"'
+        else:
+            clean_src = 'src="[CJC_IMAGE]"'
+        clean_html = clean_html[:start] + clean_src + clean_html[end:]
+        
+    return clean_html
+
+def restore_html_from_editor(html: str) -> str:
+    """편집기에서 수정한 HTML 본문 내의 로컬 파일 경로(src="uploaded_images/...")를 렌더링 미리보기용 Base64 Data URI로 복원"""
+    if not html:
+        return ""
+    
+    import re, os
+    pattern = r'src=["\']([^"\']+\.(?:png|jpg|jpeg|webp))["\']'
+    matches = list(re.finditer(pattern, html, flags=re.IGNORECASE))
+    
+    restored_html = html
+    for match in reversed(matches):
+        start, end = match.span()
+        file_path = match.group(1)
+        if os.path.exists(file_path):
+            b64_url = llm_router.get_image_src_url({"filepath": file_path})
+            restored_html = restored_html[:start] + f'src="{b64_url}"' + restored_html[end:]
+            
+    return restored_html
+
+
 # =============================================================================
 # 3. SEO 포스팅 원고 미리보기, 수동 수정, 이미지 교체, LLM AI 재검토(Audit) 컴포넌트
 # =============================================================================
@@ -414,9 +458,15 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
             key=f"{tab_key}_edit_title_input"
         )
         
+        # Base64 코드 제외하고 깔끔한 텍스트로 렌더링
+        editor_clean_content = clean_html_for_editor(
+            st.session_state.get("generated_article", ""),
+            st.session_state.get("generated_image_paths", [])
+        )
+        
         edited_content = st.text_area(
             "📝 본문 HTML/텍스트 수동 편집",
-            value=st.session_state.get("generated_article", ""),
+            value=editor_clean_content,
             height=320,
             key=f"{tab_key}_edit_content_input"
         )
@@ -427,8 +477,9 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
                 config = llm_router.load_config()
                 sanitized_title = llm_router.sanitize_compliance(edited_title, config)
                 sanitized_content = llm_router.sanitize_compliance(edited_content, config)
+                restored_article = restore_html_from_editor(sanitized_content)
                 st.session_state["generated_title"] = sanitized_title
-                st.session_state["generated_article"] = sanitized_content
+                st.session_state["generated_article"] = restored_article
                 st.toast("💾 수정 내용이 원고에 반영되었습니다!", icon="✅")
                 st.rerun()
 
@@ -468,8 +519,9 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
                 st.markdown("##### ✨ AI 추천 최적화 교정안")
                 st.caption(f"**추천 제목:** {audit_res.get('suggested_title', '')}")
                 if st.button("✨ AI 추천 교정 원고 1클릭 반영", key=f"{tab_key}_apply_audit_btn", type="primary", use_container_width=True):
+                    restored_suggested = restore_html_from_editor(audit_res.get("suggested_content", edited_content))
                     st.session_state["generated_title"] = audit_res.get("suggested_title", edited_title)
-                    st.session_state["generated_article"] = audit_res.get("suggested_content", edited_content)
+                    st.session_state["generated_article"] = restored_suggested
                     st.toast("✨ AI 교정 원고로 1클릭 업데이트되었습니다!", icon="🚀")
                     st.rerun()
 
@@ -540,7 +592,8 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
 
     # Sub-tab 4: HTML 소스
     with sub_tab4:
-        st.code(st.session_state["generated_article"], language="html")
+        display_code = clean_html_for_editor(st.session_state["generated_article"], st.session_state.get("generated_image_paths", []))
+        st.code(display_code, language="html")
 
     st.divider()
 
