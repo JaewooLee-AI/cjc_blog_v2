@@ -251,7 +251,7 @@ def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optio
         m_name = models.get("chatgpt") or active_model or "gpt-4o"
         api_key = api_keys.get("openai") or os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("ChatGPT (OpenAI) API Key가 설정되지 않았습니다.")
+            raise ValueError("LLM API KEY가 설정되지 않았습니다. (현재 선택된 엔진: ChatGPT)")
         try:
             from openai import OpenAI
             client = OpenAI(api_key=api_key)
@@ -262,14 +262,14 @@ def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optio
             )
             return response.choices[0].message.content
         except Exception as e:
-            raise RuntimeError(f"ChatGPT API 호출 오류: {e}")
+            raise RuntimeError(f"LLM API (ChatGPT) 호출 오류: {e}")
             
     # 2. Claude (Anthropic)
     elif "claude" in active_provider or "anthropic" in active_provider or "claude" in active_model.lower():
         m_name = models.get("claude") or active_model or "claude-3-5-sonnet-20241022"
         api_key = api_keys.get("anthropic") or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            raise ValueError("Claude (Anthropic) API Key가 설정되지 않았습니다.")
+            raise ValueError("LLM API KEY가 설정되지 않았습니다. (현재 선택된 엔진: Claude)")
         try:
             from anthropic import Anthropic
             client = Anthropic(api_key=api_key)
@@ -280,14 +280,14 @@ def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optio
             )
             return response.content[0].text
         except Exception as e:
-            raise RuntimeError(f"Claude API 호출 오류: {e}")
+            raise RuntimeError(f"LLM API (Claude) 호출 오류: {e}")
             
     # 3. Google Gemini (기본값)
     else:
         m_name = models.get("gemini") or active_model or "gemini-2.5-flash"
         api_key = api_keys.get("google") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
-            raise ValueError("Google Gemini API Key가 설정되지 않았습니다.")
+            raise ValueError("LLM API KEY가 설정되지 않았습니다. (현재 선택된 엔진: Gemini)")
             
         target_model = m_name
         if "gemini-2.0" in target_model:
@@ -311,7 +311,7 @@ def generate_llm_response(prompt: str, config: Dict[str, Any], image_list: Optio
                     return response.text
                 raise inner_e
         except Exception as e:
-            raise RuntimeError(f"Google Gemini API 호출 오류: {e}")
+            raise RuntimeError(f"LLM API (Gemini) 호출 오류: {e}")
 
 def extract_title_from_raw_llm(raw_text: str, default_title: str) -> str:
     """LLM의 출력 원문에서 <h1> 태그 또는 첫 단락의 제목 텍스트를 정밀 추출"""
