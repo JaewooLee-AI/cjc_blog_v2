@@ -704,3 +704,146 @@ def audit_edited_article(title: str, content: str) -> Dict[str, Any]:
         "suggested_content": sanitized_content
     }
 
+
+# =============================================================================
+# SEO 키워드 밀도 분석기, 자동 보정기 및 해시태그 패키지 생성기 [고도화 1. 🎯]
+# =============================================================================
+
+SEO_REBALANCE_TEMPLATE = """
+당신은 네이버 블로그 SEO 노출 전문가입니다.
+아래 블로그 원고는 화이트리스트 키워드 밀도가 부족하거나 불균형합니다.
+원고의 문맥과 어조를 자연스럽게 유지하면서, 아래 필수 화이트리스트 키워드를 원고 전체(제목 및 본문)에 걸쳐 총 단어 수 대비 3.0% ~ 5.0% 밀도가 되도록 자연스럽게 보정하여 재작성하세요.
+
+[필수 화이트리스트 키워드]
+{whitelist_keywords}
+
+[의료법 준수 필수 수칙]
+'치료', '완치', '재생' 등 의학적 효과 오인 표현은 절대 금지하며 '스타일 보완', '두피 케어', '스타일 개선'으로 유지할 것.
+
+[기존 원고 제목]
+{title}
+
+[기존 원고 본문 HTML]
+{content}
+
+[출력 형식 제한]
+반드시 다음 JSON 형식으로만 반환하세요:
+{{
+    "rebalanced_title": "보정된 제목",
+    "rebalanced_content": "보정된 본문 HTML"
+}}
+"""
+
+def analyze_seo_keyword_density(title: str, content_html: str, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """네이버 C-Rank & DIA+ 노출 기준 SEO 키워드 밀도(3.0%~5.5%) 정량 분석"""
+    if config is None:
+        config = load_config()
+
+    whitelist = config.get("compliance", {}).get("whitelist_seo", ["가발", "탈모", "맞춤가발", "항암가발", "남성가발", "두피케어", "3D두상측정", "ATUM", "키노피스"])
+    
+    # HTML 태그 제거하여 순수 텍스트 추출
+    pure_body = re.sub(r'<[^>]+>', ' ', content_html)
+    full_text = f"{title} {pure_body}".strip()
+    
+    words = [w for w in re.split(r'\s+', full_text) if w]
+    total_word_count = len(words)
+    total_char_count = len(full_text.replace(' ', ''))
+
+    if total_word_count == 0:
+        total_word_count = 1
+
+    keyword_counts = {}
+    total_keyword_matches = 0
+
+    for kw in whitelist:
+        count = len(re.findall(re.escape(kw), full_text, flags=re.IGNORECASE))
+        keyword_counts[kw] = count
+        total_keyword_matches += count
+
+    density_pct = round((total_keyword_matches / total_word_count) * 100, 2)
+
+    if density_pct < 2.0:
+        status = "LOW"
+        status_label = "⚠️ 키워드 밀도 부족 (SEO 노출 강화 권장)"
+        status_color = "red"
+    elif 2.0 <= density_pct <= 5.5:
+        status = "OPTIMAL"
+        status_label = "🟢 최적의 SEO 키워드 밀도 유지 (네이버 C-Rank/DIA+ 최적화)"
+        status_color = "green"
+    else:
+        status = "HIGH"
+        status_label = "⚠️ 키워드 밀도 과다 (어뷰징 감지 주의)"
+        status_color = "orange"
+
+    missing_keywords = [kw for kw, c in keyword_counts.items() if c == 0]
+    present_keywords = {kw: c for kw, c in keyword_counts.items() if c > 0}
+
+    return {
+        "total_words": total_word_count,
+        "total_chars": total_char_count,
+        "total_keyword_matches": total_keyword_matches,
+        "density_pct": density_pct,
+        "status": status,
+        "status_label": status_label,
+        "status_color": status_color,
+        "keyword_counts": keyword_counts,
+        "present_keywords": present_keywords,
+        "missing_keywords": missing_keywords
+    }
+
+def auto_rebalance_seo_keywords(title: str, content_html: str, config: Optional[Dict[str, Any]] = None) -> Tuple[str, str, Dict[str, Any]]:
+    """1클릭 SEO 키워드 자동 보정기 (LLM 호출로 3~5% 최적 밀도 재구성)"""
+    if config is None:
+        config = load_config()
+
+    whitelist = config.get("compliance", {}).get("whitelist_seo", ["가발", "탈모", "맞춤가발", "항암가발", "3D두상측정", "ATUM", "키노피스"])
+    prompt = SEO_REBALANCE_TEMPLATE.format(
+        whitelist_keywords=", ".join(whitelist),
+        title=title,
+        content=content_html
+    )
+
+    try:
+        raw_res = generate_llm_response(prompt, config)
+        clean_str = raw_res.strip()
+        json_match = re.search(r'\{.*\}', clean_str, re.DOTALL)
+        if json_match:
+            data = json.loads(json_match.group(0), strict=False)
+            new_title = data.get("rebalanced_title", title)
+            new_content = data.get("rebalanced_content", content_html)
+        else:
+            new_title, new_content = title, content_html
+    except Exception as e:
+        print(f"auto_rebalance_seo_keywords failed: {e}")
+        new_title, new_content = title, content_html
+
+    final_title = sanitize_compliance(new_title, config)
+    final_content = sanitize_compliance(new_content, config)
+    stats = analyze_seo_keyword_density(final_title, final_content, config)
+
+    return final_title, final_content, stats
+
+def generate_recommended_hashtags(title: str, content_html: str, config: Optional[Dict[str, Any]] = None) -> List[str]:
+    """네이버 스마트에디터 [발행] 팝업 등록용 상위 노출 7~12개 AI 추천 해시태그 패키지 생성"""
+    if config is None:
+        config = load_config()
+
+    whitelist = config.get("compliance", {}).get("whitelist_seo", ["가발", "탈모", "맞춤가발", "항암가발", "3D두상측정", "ATUM", "키노피스"])
+    
+    tags = ["#씨제이씨협동조합", "#CJC협동조합"]
+    full_text = f"{title} {content_html}"
+
+    for kw in whitelist:
+        if kw in full_text and f"#{kw}" not in tags:
+            tags.append(f"#{kw}")
+
+    extra_candidates = ["#맞춤가발추천", "#두피케어", "#항암가발추천", "#3D두상스캔", "#친환경가발", "#키노피스", "#가발창업", "#남성가발"]
+    for cand in extra_candidates:
+        if len(tags) >= 10:
+            break
+        if cand not in tags:
+            tags.append(cand)
+
+    return tags[:10]
+
+
