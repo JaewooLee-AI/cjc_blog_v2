@@ -434,6 +434,32 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
         st.info("👈 원고 생성을 진행하시면 본 영역에서 검수, 수동 수정, 이미지 교체 및 AI 재검토를 수행할 수 있습니다.")
         return
 
+    key_editor = f"{tab_key}_edit_content_input"
+    key_title = f"{tab_key}_edit_title_input"
+    key_last_article = f"{tab_key}_last_synced_article"
+
+    current_article = st.session_state.get("generated_article", "")
+    current_title = st.session_state.get("generated_title", "")
+    last_article = st.session_state.get(key_last_article, "")
+
+    # 새로 원고가 생성되었거나 원고 내용이 변경되었으면 편집기 세션 값을 새 원고로 동기화!
+    if current_article != last_article:
+        st.session_state[key_last_article] = current_article
+        st.session_state[key_editor] = clean_html_for_editor(
+            current_article,
+            st.session_state.get("generated_image_paths", [])
+        )
+        st.session_state[key_title] = current_title
+        st.session_state.pop(f"{tab_key}_audit_result", None)
+
+    if key_editor not in st.session_state:
+        st.session_state[key_editor] = clean_html_for_editor(
+            current_article,
+            st.session_state.get("generated_image_paths", [])
+        )
+    if key_title not in st.session_state:
+        st.session_state[key_title] = current_title
+
     st.markdown(f'<div class="notranslate" translate="no" style="margin-bottom: 10px;"><strong>📌 현재 글 제목:</strong> {st.session_state.get("generated_title", "")}</div>', unsafe_allow_html=True)
     
     # 🎯 [고도화 1] SEO 키워드 밀도 분석기 & AI 추천 해시태그 패키지 위젯
@@ -465,7 +491,9 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
                     )
                     st.session_state["generated_title"] = new_t
                     st.session_state["generated_article"] = new_c
-                    st.session_state[f"{tab_key}_last_synced_article"] = ""
+                    st.session_state[key_title] = new_t
+                    st.session_state[key_editor] = clean_html_for_editor(new_c, st.session_state.get("generated_image_paths", []))
+                    st.session_state[key_last_article] = new_c
                     st.toast("⚡ SEO 키워드 밀도가 최적 범위로 자동 보정되었습니다!", icon="✨")
                     st.rerun()
 
@@ -493,32 +521,6 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
     with sub_tab2:
         st.markdown("##### ✏️ 제목 및 본문 수동 수정 / LLM AI 재검수")
         st.caption("제목과 본문을 직접 수정한 후, [🤖 수정한 원고 AI 재검토 요청]을 누르시면 SEO 점수, 가독성, 의료법/표시광고법 준수 여부를 AI가 자동 검수합니다.")
-        
-        key_editor = f"{tab_key}_edit_content_input"
-        key_title = f"{tab_key}_edit_title_input"
-        key_last_article = f"{tab_key}_last_synced_article"
-
-        current_article = st.session_state.get("generated_article", "")
-        current_title = st.session_state.get("generated_title", "")
-        last_article = st.session_state.get(key_last_article, "")
-
-        # 새로 원고가 생성되었거나 원고 내용이 변경되었으면 편집기 세션 값을 새 원고로 동기화!
-        if current_article != last_article:
-            st.session_state[key_last_article] = current_article
-            st.session_state[key_editor] = clean_html_for_editor(
-                current_article,
-                st.session_state.get("generated_image_paths", [])
-            )
-            st.session_state[key_title] = current_title
-            st.session_state.pop(f"{tab_key}_audit_result", None)
-
-        if key_editor not in st.session_state:
-            st.session_state[key_editor] = clean_html_for_editor(
-                current_article,
-                st.session_state.get("generated_image_paths", [])
-            )
-        if key_title not in st.session_state:
-            st.session_state[key_title] = current_title
         
         edited_title = st.text_input(
             "📌 글 제목 수정",
