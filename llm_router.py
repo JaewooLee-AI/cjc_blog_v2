@@ -711,8 +711,8 @@ def audit_edited_article(title: str, content: str) -> Dict[str, Any]:
 
 SEO_REBALANCE_TEMPLATE = """
 당신은 네이버 블로그 SEO 노출 전문가입니다.
-아래 블로그 원고는 화이트리스트 키워드 밀도가 부족하거나 불균형합니다.
-원고의 문맥과 어조를 자연스럽게 유지하면서, 아래 필수 화이트리스트 키워드를 원고 전체(제목 및 본문)에 걸쳐 총 단어 수 대비 3.0% ~ 5.0% 밀도가 되도록 자연스럽게 보정하여 재작성하세요.
+아래 블로그 원고는 화이트리스트 키워드 밀도가 부족하거나 과다(불균형)합니다.
+원고의 문맥과 어조를 자연스럽게 유지하면서, 아래 필수 화이트리스트 키워드가 과다하게 반복되어 중복 기재되어 있다면 대명사나 자연스러운 표현으로 다듬고, 부족하다면 자연스럽게 삽입하여 원고 전체(제목 및 본문)에 걸쳐 총 단어 수 대비 3.0% ~ 5.0% 최적 밀도가 되도록 보정하여 재작성하세요.
 
 [필수 화이트리스트 키워드]
 {whitelist_keywords}
@@ -752,13 +752,19 @@ def analyze_seo_keyword_density(title: str, content_html: str, config: Optional[
     if total_word_count == 0:
         total_word_count = 1
 
-    keyword_counts = {}
+    # 길이기월 순(긴 단어 우선)으로 정렬하여 하위 부분 문자열(예: '맞춤가발' 내부의 '가발') 중복 집계 방지
+    sorted_whitelist = sorted(whitelist, key=len, reverse=True)
+    
+    keyword_counts = {kw: 0 for kw in whitelist}
     total_keyword_matches = 0
 
-    for kw in whitelist:
-        count = len(re.findall(re.escape(kw), full_text, flags=re.IGNORECASE))
-        keyword_counts[kw] = count
-        total_keyword_matches += count
+    temp_text = full_text
+    for idx, kw in enumerate(sorted_whitelist):
+        matches = len(re.findall(re.escape(kw), temp_text, flags=re.IGNORECASE))
+        keyword_counts[kw] = matches
+        total_keyword_matches += matches
+        # 이미 매칭된 단어는 치환하여 더 짧은 부분 문자열(예: '가발')이 중복 카운트되는 것 방지
+        temp_text = re.sub(re.escape(kw), f"__TOKEN_{idx}__", temp_text, flags=re.IGNORECASE)
 
     density_pct = round((total_keyword_matches / total_word_count) * 100, 2)
 
