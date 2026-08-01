@@ -53,38 +53,83 @@ def init_db():
     conn.commit()
     conn.close()
 
+def normalize_url(url: str) -> str:
+    """구글 RSS 및 뉴스 트래킹 파라미터(oc, hl, gl, utm_*)를 제거하여 정제된 URL 생성"""
+    if not url:
+        return ""
+    try:
+        import urllib.parse
+        parsed = urllib.parse.urlparse(url.strip())
+        qd = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        drop_keys = {"oc", "hl", "gl", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "ved", "usg"}
+        clean_qd = {k: v for k, v in qd.items() if k.lower() not in drop_keys}
+        clean_query = urllib.parse.urlencode(clean_qd, doseq=True)
+        return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, clean_query, parsed.fragment))
+    except Exception:
+        return url.strip()
+
 def hash_url(url: str) -> str:
-    """URL을 SHA256 해시 문자열로 변환하여 O(1) 키 생성"""
-    clean_url = url.strip().lower()
+    """정규화된 URL을 SHA256 해시 문자열로 변환하여 O(1) 키 생성"""
+    clean_url = normalize_url(url).lower()
     return hashlib.sha256(clean_url.encode('utf-8')).hexdigest()
 
-def is_article_exists(url: str) -> bool:
-    """해당 URL이 이미 크롤링되어 DB에 존재하는지 검사"""
-    url_hash = hash_url(url)
+def hash_title(title: str) -> str:
+    """기사 제목 특수문자 및 공백 제거 후 SHA256 해시 생성 (동일 기사의 리다이렉트 URL 차단)"""
+    import re
+    clean_t = re.sub(r'[\s\W]+', '', title.strip().lower())
+    return hashlib.sha256(clean_t.encode('utf-8')).hexdigest()
+
+def is_article_exists(url: str, title: str = "") -> bool:
+    """해당 URL 또는 기사 제목이 이미 크롤링되어 DB에 존재하는지 O(1) 해시 비교 검사"""
+    url_h = hash_url(url)
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM article_history WHERE url_hash = ?", (url_hash,))
+    
+    if title and len(title.strip()) > 5:
+        # URL 해시 또는 제목 단순 비교
+        cursor.execute("SELECT 1 FROM article_history WHERE url_hash = ? OR title = ?", (url_h, title.strip()))
+    else:
+        cursor.execute("SELECT 1 FROM article_history WHERE url_hash = ?", (url_h,))
+        
     row = cursor.fetchone()
     conn.close()
     return row is not None
 
 def save_article_history(url: str, title: str, source: str = "RSS") -> bool:
     """크롤링된 기사 URL 및 메타데이터 저장"""
-    url_hash = hash_url(url)
-    if is_article_exists(url):
+    url_h = hash_url(url)
+    if is_article_exists(url, title):
         return False
     try:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO article_history (url_hash, url, title, source) VALUES (?, ?, ?, ?)",
-            (url_hash, url, title, source)
+            (url_h, normalize_url(url), title.strip(), source)
         )
         conn.commit()
         conn.close()
         return True
     except sqlite3.IntegrityError:
         return False
+
+def get_recent_articles_for_dedup(limit: int = 30) -> list:
+    """2차 LLM 시맨틱 중복 검증의 대조군으로 활용할 최근 수집 기사 목록 반환"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT url, title, source, crawled_at
+            FROM article_history
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"url": r[0], "title": r[1], "summary": r[1], "source": r[2]} for r in rows]
+    except Exception as e:
+        print(f"get_recent_articles_for_dedup error: {e}")
+        return []
 
 def clear_article_history() -> int:
     """수집된 기사 중복 방지 이력 테이블(article_history)을 초기화하여 테스트 시 재수집 가능하게 처리"""

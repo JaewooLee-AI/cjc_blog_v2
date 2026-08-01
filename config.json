@@ -14,7 +14,7 @@
     }
   },
   "persona_guide": {
-    "system_persona": "대한가발협회 소속 씨제이씨협동조합의 친절하고 전문적인 수석 뷰티 에디터이자 마케팅 전문가",
+    "system_persona": "대한가발협회 소속 씨제이씨협동조합의 친절하고 전문적인 수석 뷰티 에디터이자 마케팅 전문가.\n공지사항 및 휴무안내는 이미지 삽입을 하지 않는다.",
     "few_shot_samples": [
       {
         "title": "[씨제이씨협동조합] 10분 만에 끝나는 혁신적인 ATUM 3D 맞춤 가발 스캔 체험기",
@@ -67,22 +67,8 @@
       "부작용 제로": "안전성 검증 완료"
     }
   },
-  "news_collection": {
-    "enable_multilingual_keywords": true,
-    "multilingual_keywords": {
-      "ko": ["가발", "탈모", "맞춤가발", "두피케어", "항암가발", "가발제작", "인조가발", "남성가발"],
-      "en": ["wig", "hair loss", "alopecia", "scalp care", "custom wig", "hair replacement", "toupee", "medical wig"]
-    },
-    "enable_semantic_duplicate_check": true,
-    "enable_relevance_filter": true,
-    "relevance_threshold": 2.0,
-    "news_sources": ["google_news", "naver_news"]
-  },
   "google_sheets": {
     "spreadsheet_url": "",
     "sheet_name": "CJC_Blog_Logs"
-  },
-  "naver_settings": {
-    "naver_blog_id": "jwl1722"
   }
 }

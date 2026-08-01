@@ -694,15 +694,14 @@ with tab1:
             help="💡 네이버 검색에 최적화된 사전 승인 키워드를 기반으로 트렌드 뉴스를 탐색합니다."
         )
         
-        limit_count = st.slider("키워드별 가져올 기사 수 (개)", 1, 5, 2, help="선택한 각 키워드마다 구글 뉴스에서 새로 검색해 가져올 기사의 개수입니다 (기본 2개).")
+        limit_count = st.slider("키워드별 가져올 기사 수 (개)", 1, 5, 2, help="선택한 각 키워드마다 검색해 가져올 기사의 개수입니다 (기본 2개).")
 
-        # 기획 문서대로 관련성 필터링 및 뉴스 소스 구분 옵션
-        col_filter1, col_filter2, col_filter3, col_filter4 = st.columns([3, 1, 1, 1])
+        col_filter1, col_filter2, col_filter3, col_filter4, col_filter5 = st.columns([1.5, 1, 1, 1, 1.5])
         with col_filter1:
             enable_relevance_filter = st.checkbox(
-                "🎯 기사 관련성 필터링 (기획 문서 [F-01] 구현)",
+                "🎯 기사 관련성 필터링",
                 value=True,
-                help="💡 가발/탈모 관련 기사만 자동으로 선별하여 수집합니다. 상관없는 기사는 자동으로 제외됩니다."
+                help="💡 가발/탈모 관련 기사만 자동으로 선별하여 수집합니다."
             )
         with col_filter2:
             include_domestic = st.checkbox(
@@ -721,6 +720,12 @@ with tab1:
                 "🧪 중복허용(테스트용)",
                 value=False,
                 help="💡 체크 시 이미 수집했던 기사도 제외하지 않고 전체 다시 수집합니다."
+            )
+        with col_filter5:
+            enable_semantic_dedup = st.checkbox(
+                "🧠 LLM 2차 시맨틱 중복 검증",
+                value=False,
+                help="💡 체크 시 1차 O(1) 해시 중복 제거 후, AI가 기사 내용의 의미적 유사도(80% 이상 중복)를 2차 필터링합니다."
             )
 
         # 버튼 영역: 수집 시작 버튼 & 수집 목록 비우기 버튼 상시 노출
@@ -743,21 +748,30 @@ with tab1:
             if include_international:
                 source_message.append("해외 뉴스")
 
-            with st.spinner(f"최신 뉴스 기사 자동 수집 중... ({', '.join(source_message)} 탐색 중)"):
-                articles = crawler.fetch_trend_articles(
+            with st.spinner(f"최신 뉴스 기사 자동 수집 중... ({', '.join(source_message)} 탐색 및 2단계 중복 필터링 적용 중)"):
+                res = crawler.fetch_trend_articles(
                     keywords=selected_keywords,
                     limit_per_keyword=limit_count,
                     enable_relevance_filter=enable_relevance_filter,
                     include_domestic=include_domestic,
                     include_international=include_international,
-                    ignore_dedup=ignore_dedup
+                    ignore_dedup=ignore_dedup,
+                    enable_semantic_dedup=enable_semantic_dedup
                 )
+                if isinstance(res, tuple):
+                    articles, stats = res
+                else:
+                    articles = res
+                    stats = {}
+
                 st.session_state["crawled_articles"] = articles
                 if articles:
                     if not ignore_dedup:
                         for art in articles:
                             db_manager.save_article_history(art['url'], art['title'], art.get('source', 'RSS'))
                     st.success(f"✨ 뉴스 기사 {len(articles)}건 수집 완료!")
+                    if stats:
+                        st.info(f"📊 **[수집 & 중복 제거 리포트]** RAW 수집: {stats.get('total_raw', 0)}건 | 🚫 1차 O(1) 해시 중복 제외: {stats.get('dedup_hash_count', 0)}건 | 🧠 2차 LLM 시맨틱 중복 제외: {stats.get('dedup_semantic_count', 0)}건")
                 else:
                     st.warning("⚠️ 선택한 키워드의 최신 기사가 모두 이미 수집 완료되었거나 검색 결과가 없습니다. '🧪 중복허용(테스트용)'을 체크하거나 다른 키워드를 선택해 보세요.")
 

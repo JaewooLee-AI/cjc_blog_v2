@@ -133,8 +133,66 @@ def translate_to_english(text: str) -> str:
 
     return text
 
+def fetch_fallback_naver_scraping(keyword: str, max_results: int = 5, ignore_dedup: bool = False) -> List[Dict[str, Any]]:
+    """[Fallback Web Scraper] Naver News HTML 수집 (RSS 장애/블록 시 예외 회피 파이프라인)"""
+    search_url = f"https://search.naver.com/search.naver?where=news&query={urllib.parse.quote(keyword)}&sm=tab_opt&sort=0&photo=0&field=0"
+    print(f"  🌐 [Fallback Web Scraper] Naver News HTML 직접 스크래핑 시도: '{keyword}'")
+
+    try:
+        response = requests.get(search_url, headers=DEFAULT_HEADERS, timeout=8)
+        if response.status_code != 200:
+            return []
+        soup = BeautifulSoup(response.text, "html.parser")
+    except Exception as e:
+        print(f"Fallback Naver scraping failed for {keyword}: {e}")
+        return []
+
+    articles = []
+    news_items = soup.select("div.news_wrap")[:max_results * 2]
+
+    for item in news_items:
+        try:
+            title_tag = item.select_one("a.news_tit")
+            if not title_tag:
+                continue
+
+            link = title_tag.get("href", "")
+            title = title_tag.get_text(strip=True)
+
+            if not link or not title:
+                continue
+
+            # 1차 O(1) URL 및 제목 해시 중복 검사
+            if not ignore_dedup and db_manager.is_article_exists(link, title):
+                continue
+
+            summary_tag = item.select_one("div.news_dsc")
+            summary = summary_tag.get_text(strip=True) if summary_tag else title
+
+            source_tag = item.select_one("a.info.press")
+            source = source_tag.get_text(strip=True) if source_tag else "Naver News (Web Scraper)"
+
+            article_data = {
+                "url": link,
+                "title": title,
+                "summary": summary,
+                "source": f"{source} [WebScraper]",
+                "published": "",
+                "keyword": keyword,
+                "language": "ko",
+                "news_type": "domestic"
+            }
+            articles.append(article_data)
+            if len(articles) >= max_results:
+                break
+        except Exception as e:
+            print(f"Error parsing Fallback Naver item: {e}")
+            continue
+
+    return articles
+
 def fetch_google_news_rss(keyword: str, language: str = "ko", max_results: int = 5, ignore_dedup: bool = False) -> List[Dict[str, Any]]:
-    """구글 뉴스 RSS 피드에서 키워드 기반 최신 기사 수집 (다국어 지원 및 국내/해외 필터링)"""
+    """구글 뉴스 RSS 피드에서 키워드 기반 최신 기사 수집 (다국어 지원 및 O(1) 해시 중복검사)"""
     if language == "ko":
         encoded_keyword = urllib.parse.quote(keyword)
         rss_url = f"https://news.google.com/rss/search?q={encoded_keyword}&hl=ko&gl=KR&ceid=KR:ko"
@@ -145,15 +203,15 @@ def fetch_google_news_rss(keyword: str, language: str = "ko", max_results: int =
     try:
         response = requests.get(rss_url, headers=DEFAULT_HEADERS, timeout=8)
         if response.status_code != 200:
-            return []
+            return fetch_fallback_naver_scraping(keyword, max_results, ignore_dedup)
         feed = feedparser.parse(response.content)
     except Exception as e:
-        print(f"Error fetching Google News RSS for {keyword} ({language}): {e}")
-        return []
+        print(f"Error fetching Google News RSS for {keyword} ({language}): {e}, switching to Fallback Scraper...")
+        return fetch_fallback_naver_scraping(keyword, max_results, ignore_dedup)
 
     articles = []
 
-    # 충분한 미수집 기사를 확보하기 위해 상위 50개 항목까지 넓게 탐색
+    # 충분한 미수집 기사를 확보하기 위해 상위 50개 항목 탐색
     for entry in feed.entries[:50]:
         link = entry.get("link", "")
         title = entry.get("title", "")
@@ -163,8 +221,8 @@ def fetch_google_news_rss(keyword: str, language: str = "ko", max_results: int =
         if not link or not title:
             continue
 
-        # SQLite 해시 기반 O(1) 중복 검사 (ignore_dedup=True 일 경우 검사 우회)
-        if not ignore_dedup and db_manager.is_article_exists(link):
+        # 1차 O(1) URL 및 제목 해시 중복 검사
+        if not ignore_dedup and db_manager.is_article_exists(link, title):
             continue
 
         # 국내/해외 구분 및 언어 필터링
@@ -172,24 +230,19 @@ def fetch_google_news_rss(keyword: str, language: str = "ko", max_results: int =
         combined_text = f"{title} {entry.get('summary', '')}"
         has_korean_text = detect_korean_text(combined_text)
 
-        # 언어 설정과 일치하지 않는 기사는 건너뜀
         if language == "en":
-            # 해외 뉴스 수집 시: 한국 출처이거나 한글 텍스트 비율이 높으면 해외 뉴스에서 제외
             if is_korean or has_korean_text:
                 continue
         elif language == "ko":
-            # 국내 뉴스 수집 시: 한국 출처도 아니고 한글 텍스트도 없으면 국내 뉴스에서 제외
             if not is_korean and not has_korean_text:
                 continue
 
-        # HTML 태그 제거 및 기사 서머리 정제
         summary_raw = entry.get("summary", "")
         soup = BeautifulSoup(summary_raw, "html.parser")
         clean_summary = soup.get_text(separator=" ").strip()
         if not clean_summary:
             clean_summary = title
 
-        # 해외 뉴스의 경우 서머리 한글 번역 수행
         summary_ko = clean_summary
         summary_en_orig = ""
         if language == "en":
@@ -211,23 +264,28 @@ def fetch_google_news_rss(keyword: str, language: str = "ko", max_results: int =
         if len(articles) >= max_results:
             break
 
+    # RSS 결과가 비어있는 경우 Fallback Web Scraper로 즉시 자동 릴레이 전환
+    if not articles:
+        print(f"⚠️ Google News RSS empty for '{keyword}', executing Fallback Web Scraper...")
+        return fetch_fallback_naver_scraping(keyword, max_results, ignore_dedup)
+
     return articles
 
 def fetch_naver_news_search(keyword: str, max_results: int = 5, ignore_dedup: bool = False) -> List[Dict[str, Any]]:
-    """네이버 뉴스 검색 API 스타일 크롤링 (국내 뉴스 강화)"""
+    """네이버 뉴스 검색 크롤링 (O(1) 해시 중복검사 & Fallback 지원)"""
     search_url = f"https://search.naver.com/search.naver?where=news&query={urllib.parse.quote(keyword)}&sm=tab_opt&sort=0&photo=0&field=0&reporter_article=&pd=0&ds=&de=&docid=&nso=so%3Ar%2Cp%3Aall&mynews=0&refresh_start=0&related=0"
 
     try:
         response = requests.get(search_url, headers=DEFAULT_HEADERS, timeout=8)
         if response.status_code != 200:
-            return []
+            return fetch_fallback_naver_scraping(keyword, max_results, ignore_dedup)
         soup = BeautifulSoup(response.text, "html.parser")
     except Exception as e:
-        print(f"Error fetching Naver News for {keyword}: {e}")
-        return []
+        print(f"Error fetching Naver News for {keyword}: {e}, switching to Fallback Scraper...")
+        return fetch_fallback_naver_scraping(keyword, max_results, ignore_dedup)
 
     articles = []
-    news_items = soup.select("div.news_wrap")[:max_results * 2]  # 여유있게 가져오기
+    news_items = soup.select("div.news_wrap")[:max_results * 2]
 
     for item in news_items:
         try:
@@ -241,15 +299,13 @@ def fetch_naver_news_search(keyword: str, max_results: int = 5, ignore_dedup: bo
             if not link or not title:
                 continue
 
-            # SQLite 해시 기반 O(1) 중복 검사 (ignore_dedup=True 일 경우 검사 우회)
-            if not ignore_dedup and db_manager.is_article_exists(link):
+            # 1차 O(1) URL 및 제목 해시 중복 검사
+            if not ignore_dedup and db_manager.is_article_exists(link, title):
                 continue
 
-            # 간단한 요약 추출
             summary_tag = item.select_one("div.news_dsc")
             summary = summary_tag.get_text(strip=True) if summary_tag else title
 
-            # 출처 정보
             source_tag = item.select_one("a.info.press")
             source = source_tag.get_text(strip=True) if source_tag else "Naver News"
 
@@ -266,10 +322,12 @@ def fetch_naver_news_search(keyword: str, max_results: int = 5, ignore_dedup: bo
             articles.append(article_data)
             if len(articles) >= max_results:
                 break
-
         except Exception as e:
             print(f"Error parsing Naver news item: {e}")
             continue
+
+    if not articles:
+        return fetch_fallback_naver_scraping(keyword, max_results, ignore_dedup)
 
     return articles
 
@@ -279,16 +337,14 @@ def check_article_relevance(article_data: Dict[str, Any], target_keywords: List[
     summary = article_data.get("summary", "").lower()
     combined_text = f"{title} {summary}"
 
-    # 직접 키워드 매칭 점수
     keyword_score = 0
     for keyword in target_keywords:
         keyword_lower = keyword.lower()
         if keyword_lower in title:
-            keyword_score += 3  # 제목 매칭은 3점
+            keyword_score += 3
         if keyword_lower in summary:
-            keyword_score += 1  # 본문 매칭은 1점
+            keyword_score += 1
 
-    # 기본 관련성 단어 (의료/미용 분야)
     relevance_indicators = [
         "모발", "두피", "머리", "헤어", "샴푸", "케어", "살모", "헤어",
         "hair", "scalp", "wig", "toupee", "alopecia"
@@ -300,98 +356,119 @@ def check_article_relevance(article_data: Dict[str, Any], target_keywords: List[
             relevance_score += 0.5
 
     total_score = keyword_score + relevance_score
-
-    # 점수가 2점 이상이면 관련 있다고 판단
     is_relevant = total_score >= 2.0
-
     return is_relevant, total_score
 
-def fetch_trend_articles(keywords: List[str] = None, limit_per_keyword: int = 3, enable_relevance_filter: bool = True, include_domestic: bool = True, include_international: bool = True, ignore_dedup: bool = False) -> List[Dict[str, Any]]:
-    """여러 키워드와 다중 소스에 대해 최신 동향 기사들을 통합 수집하고 관련성 필터링 적용
-
-    국내/해외 뉴스 체크박스에 따라 완전히 분리된 검색 수행
-    - 국내 뉴스: 한국어 키워드 + 구글(한국) + 네이버 뉴스
-    - 해외 뉴스: 영어 키워드 + 구글(영어)만
+def fetch_trend_articles(
+    keywords: List[str] = None,
+    limit_per_keyword: int = 3,
+    enable_relevance_filter: bool = True,
+    include_domestic: bool = True,
+    include_international: bool = True,
+    ignore_dedup: bool = False,
+    enable_semantic_dedup: bool = False
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    여러 키워드와 다중 소스에 대해 최신 동향 기사들을 통합 수집 및 2단계 중복 필터링 적용
+    
+    - 1차 O(1) 정규화 URL & 제목 해시 물리적 중복 제거
+    - 2차 LLM 시맨틱 유사도 (80% 이상 중복) 필터링 (enable_semantic_dedup=True 시)
+    - RSS 차단 시 Fallback Web Scraper 자동 릴레이 전환
     """
     if keywords is None:
-        keywords = DEFAULT_KEYWORDS["ko"]  # 기본 한국어 키워드 사용
+        keywords = DEFAULT_KEYWORDS["ko"]
 
     all_articles = []
     seen_urls = set()
+    seen_titles = set()
 
-    # 관련성 필터링을 위한 타겟 키워드 (언어 혼합)
+    stats = {
+        "total_raw": 0,
+        "dedup_hash_count": 0,
+        "dedup_semantic_count": 0,
+        "sources_used": set()
+    }
+
     filter_keywords = []
     if include_domestic:
         filter_keywords.extend(DEFAULT_KEYWORDS["ko"])
     if include_international:
         filter_keywords.extend(DEFAULT_KEYWORDS["en"])
 
-    # 1. 국내 뉴스 수집 (국내 뉴스 체크 시)
+    import llm_router
+
+    # DB 내 최근 수집 기사 대조군 로드 (2차 시맨틱 중복 대조용)
+    recent_db_articles = db_manager.get_recent_articles_for_dedup(limit=25) if enable_semantic_dedup else []
+
+    candidate_articles = []
+
+    # 1. 국내 뉴스 수집
     if include_domestic:
         print(f"🇰🇷 국내 뉴스 수집 시작: {keywords}")
         for kw in keywords:
-            # 1-1. 구글 뉴스 (한국어)
-            google_ko_articles = fetch_google_news_rss(kw, language="ko", max_results=limit_per_keyword, ignore_dedup=ignore_dedup)
-            print(f"  - 구글(한국) '{kw}': {len(google_ko_articles)}건 수집")
-            for art in google_ko_articles:
-                if art["url"] not in seen_urls:
-                    # 관련성 필터링 (활성화된 경우)
-                    if enable_relevance_filter:
-                        is_relevant, score = check_article_relevance(art, filter_keywords)
-                        if not is_relevant:
-                            print(f"    ✗ 필터링: {art['title'][:30]}...")
-                            continue
-                        art["relevance_score"] = score
+            google_ko = fetch_google_news_rss(kw, language="ko", max_results=limit_per_keyword, ignore_dedup=ignore_dedup)
+            candidate_articles.extend(google_ko)
 
-                    seen_urls.add(art["url"])
-                    all_articles.append(art)
-                    print(f"    ✓ 추가: {art['source'][:15]} - {art['title'][:30]}...")
+            naver_ko = fetch_naver_news_search(kw, max_results=limit_per_keyword, ignore_dedup=ignore_dedup)
+            candidate_articles.extend(naver_ko)
 
-            # 1-2. 네이버 뉴스 (국내 강화)
-            naver_articles = fetch_naver_news_search(kw, max_results=limit_per_keyword, ignore_dedup=ignore_dedup)
-            print(f"  - 네이버 '{kw}': {len(naver_articles)}건 수집")
-            for art in naver_articles:
-                if art["url"] not in seen_urls:
-                    # 관련성 필터링 (활성화된 경우)
-                    if enable_relevance_filter:
-                        is_relevant, score = check_article_relevance(art, filter_keywords)
-                        if not is_relevant:
-                            print(f"    ✗ 필터링: {art['title'][:30]}...")
-                            continue
-                        art["relevance_score"] = score
-
-                    seen_urls.add(art["url"])
-                    all_articles.append(art)
-                    print(f"    ✓ 추가: {art['source'][:15]} - {art['title'][:30]}...")
-
-    # 2. 해외 뉴스 수집 (해외 뉴스 체크 시: 선택된 한글 키워드를 영문으로 동적 번역하여 탐색)
+    # 2. 해외 뉴스 수집
     if include_international:
         international_keywords = list(dict.fromkeys([translate_to_english(kw) for kw in keywords]))
         print(f"🌍 해외 뉴스 수집 시작: {international_keywords}")
         for kw in international_keywords:
-            # 구글 뉴스 (영어권)
-            google_en_articles = fetch_google_news_rss(kw, language="en", max_results=limit_per_keyword, ignore_dedup=ignore_dedup)
-            print(f"  - 구글(영어) '{kw}': {len(google_en_articles)}건 수집")
-            for art in google_en_articles:
-                if art["url"] not in seen_urls:
-                    # 관련성 필터링 (활성화된 경우)
-                    if enable_relevance_filter:
-                        is_relevant, score = check_article_relevance(art, filter_keywords)
-                        if not is_relevant:
-                            print(f"    ✗ 필터링: {art['title'][:30]}...")
-                            continue
-                        art["relevance_score"] = score
+            google_en = fetch_google_news_rss(kw, language="en", max_results=limit_per_keyword, ignore_dedup=ignore_dedup)
+            candidate_articles.extend(google_en)
 
-                    seen_urls.add(art["url"])
-                    all_articles.append(art)
-                    print(f"    ✓ 추가: {art['source'][:15]} - {art['title'][:30]}...")
+    stats["total_raw"] = len(candidate_articles)
 
-    # 관련성 점수순 정렬 (필터링이 활성화된 경우)
+    # 3. 1차 O(1) URL 및 제목 해시 중복 제거 & 관련성 필터링
+    for art in candidate_articles:
+        clean_u = db_manager.normalize_url(art["url"])
+        norm_t = db_manager.hash_title(art["title"])
+
+        if not ignore_dedup and (clean_u in seen_urls or norm_t in seen_titles):
+            stats["dedup_hash_count"] += 1
+            continue
+
+        if enable_relevance_filter:
+            is_rel, score = check_article_relevance(art, filter_keywords)
+            if not is_rel:
+                continue
+            art["relevance_score"] = score
+
+        # 4. 2차 LLM 시맨틱 유사도 검증 (80% 이상 의미적 중복 필터링)
+        if enable_semantic_dedup and not ignore_dedup:
+            is_sem_dup = False
+            # 이미 채택된 기사 및 최근 DB 기사와 유사도 비교
+            check_targets = recent_db_articles + all_articles[-10:]
+            for target in check_targets:
+                try:
+                    sem_res = llm_router.check_semantic_duplicate(art, target)
+                    if sem_res.get("is_duplicate") or sem_res.get("similarity_score", 0) >= 80:
+                        print(f"    🧠 LLM 시맨틱 중복 제외 ({sem_res.get('similarity_score')}%): '{art['title'][:25]}' <-> '{target['title'][:25]}'")
+                        is_sem_dup = True
+                        stats["dedup_semantic_count"] += 1
+                        break
+                except Exception as sem_e:
+                    print(f"시맨틱 중복 검사 오류: {sem_e}")
+                    break
+
+            if is_sem_dup:
+                continue
+
+        seen_urls.add(clean_u)
+        seen_titles.add(norm_t)
+        stats["sources_used"].add(art.get("source", "RSS"))
+        all_articles.append(art)
+
     if enable_relevance_filter:
         all_articles.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
-        print(f"🎯 최종 {len(all_articles)}건 (관련성 필터링 완료)")
 
-    return all_articles
+    stats["sources_used"] = list(stats["sources_used"])
+    print(f"🎯 최종 {len(all_articles)}건 수집 완료 (RAW: {stats['total_raw']}, Hash 필터: {stats['dedup_hash_count']}, LLM 시맨틱 필터: {stats['dedup_semantic_count']})")
+
+    return all_articles, stats
 
 def extract_full_article_text(url: str) -> str:
     """기사 URL에 접근하여 본문 텍스트 추출 (추출 실패 시 기본 요청 실패 메시지 처리)"""
