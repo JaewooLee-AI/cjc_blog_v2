@@ -359,6 +359,18 @@ def check_article_relevance(article_data: Dict[str, Any], target_keywords: List[
     is_relevant = total_score >= 2.0
     return is_relevant, total_score
 
+import difflib
+
+def quick_text_similarity(t1: str, t2: str) -> float:
+    """로컬 빠른 문자열 유사도 계산 (무분별한 LLM API 반복 호출로 인한 무한 로딩 방지)"""
+    if not t1 or not t2:
+        return 0.0
+    clean1 = re.sub(r'[\s\W]+', '', t1.lower())
+    clean2 = re.sub(r'[\s\W]+', '', t2.lower())
+    if not clean1 or not clean2:
+        return 0.0
+    return difflib.SequenceMatcher(None, clean1, clean2).ratio()
+
 def fetch_trend_articles(
     keywords: List[str] = None,
     limit_per_keyword: int = 3,
@@ -372,7 +384,7 @@ def fetch_trend_articles(
     여러 키워드와 다중 소스에 대해 최신 동향 기사들을 통합 수집 및 2단계 중복 필터링 적용
     
     - 1차 O(1) 정규화 URL & 제목 해시 물리적 중복 제거
-    - 2차 LLM 시맨틱 유사도 (80% 이상 중복) 필터링 (enable_semantic_dedup=True 시)
+    - 2차 LLM 시맨틱 유사도 (80% 이상 중복) 필터링 (로컬 사전필터로 1초 이내 빠른 수집 보장)
     - RSS 차단 시 Fallback Web Scraper 자동 릴레이 전환
     """
     if keywords is None:
@@ -397,8 +409,8 @@ def fetch_trend_articles(
 
     import llm_router
 
-    # DB 내 최근 수집 기사 대조군 로드 (2차 시맨틱 중복 대조용)
-    recent_db_articles = db_manager.get_recent_articles_for_dedup(limit=25) if enable_semantic_dedup else []
+    # DB 내 최근 수집 기사 대조군 로드 (2차 시맨틱 중복 대조용 - 상위 10건으로 제한)
+    recent_db_articles = db_manager.get_recent_articles_for_dedup(limit=10) if enable_semantic_dedup else []
 
     candidate_articles = []
 
@@ -437,22 +449,25 @@ def fetch_trend_articles(
                 continue
             art["relevance_score"] = score
 
-        # 4. 2차 LLM 시맨틱 유사도 검증 (80% 이상 의미적 중복 필터링)
+        # 4. 2차 LLM 시맨틱 유사도 검증 (80% 이상 의미적 중복 필터링 - Fast Pre-filter 적용)
         if enable_semantic_dedup and not ignore_dedup:
             is_sem_dup = False
-            # 이미 채택된 기사 및 최근 DB 기사와 유사도 비교
-            check_targets = recent_db_articles + all_articles[-10:]
+            # 대조군을 최근 DB 기사 5건 + 현재 수집된 기사 5건으로 제한
+            check_targets = recent_db_articles[:5] + all_articles[-5:]
             for target in check_targets:
-                try:
-                    sem_res = llm_router.check_semantic_duplicate(art, target)
-                    if sem_res.get("is_duplicate") or sem_res.get("similarity_score", 0) >= 80:
-                        print(f"    🧠 LLM 시맨틱 중복 제외 ({sem_res.get('similarity_score')}%): '{art['title'][:25]}' <-> '{target['title'][:25]}'")
-                        is_sem_dup = True
-                        stats["dedup_semantic_count"] += 1
+                # 로컬 유사도 사전 검사 (유사도 0.3 이상일 때만 AI API 호출)
+                local_sim = quick_text_similarity(art["title"], target.get("title", ""))
+                if local_sim >= 0.3:
+                    try:
+                        sem_res = llm_router.check_semantic_duplicate(art, target)
+                        if sem_res.get("is_duplicate") or sem_res.get("similarity_score", 0) >= 80:
+                            print(f"    🧠 LLM 시맨틱 중복 제외 ({sem_res.get('similarity_score')}%): '{art['title'][:25]}' <-> '{target['title'][:25]}'")
+                            is_sem_dup = True
+                            stats["dedup_semantic_count"] += 1
+                            break
+                    except Exception as sem_e:
+                        print(f"시맨틱 중복 검사 오류: {sem_e}")
                         break
-                except Exception as sem_e:
-                    print(f"시맨틱 중복 검사 오류: {sem_e}")
-                    break
 
             if is_sem_dup:
                 continue
