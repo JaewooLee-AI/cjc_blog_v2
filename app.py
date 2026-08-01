@@ -462,49 +462,21 @@ def render_article_preview_and_editor(tab_key: str, active_blog_id: str):
 
     st.markdown(f'<div class="notranslate" translate="no" style="margin-bottom: 10px;"><strong>📌 현재 글 제목:</strong> {st.session_state.get("generated_title", "")}</div>', unsafe_allow_html=True)
     
-    # 🎯 [고도화 1] SEO 키워드 밀도 분석기 & AI 추천 해시태그 패키지 위젯
-    seo_density = llm_router.analyze_seo_keyword_density(
-        title=st.session_state.get("generated_title", ""),
-        content_html=st.session_state.get("generated_article", "")
-    )
+    # 🎯 AI 추천 상위 노출 해시태그 패키지 (깔끔한 1클릭 복사)
     recommended_hashtags = llm_router.generate_recommended_hashtags(
         title=st.session_state.get("generated_title", ""),
         content_html=st.session_state.get("generated_article", "")
     )
+    tag_str = " ".join(recommended_hashtags)
 
-    with st.expander("🎯 **SEO 키워드 밀도 분석기 & AI 추천 해시태그 패키지**", expanded=True):
-        seo_col1, seo_col2, seo_col3 = st.columns([1.2, 1.2, 2.2])
-        with seo_col1:
-            st.metric("📝 총 단어 / 글자 수", f"{seo_density['total_words']}단어 / {seo_density['total_chars']}자")
-        with seo_col2:
-            st.metric("🎯 키워드 노출 횟수", f"{seo_density['total_keyword_matches']}회")
-        with seo_col3:
-            st.metric("📊 SEO 키워드 밀도", f"{seo_density['density_pct']}%", delta=seo_density['status_label'])
-
-        # 키워드 밀도 보정 버튼
-        if seo_density['status'] != "OPTIMAL":
-            if st.button("⚡ 1클릭 SEO 키워드 자동 보정 (3~5% 최적 밀도 재구성)", key=f"{tab_key}_rebalance_btn", type="primary", use_container_width=True):
-                with st.spinner("🤖 AI가 키워드 밀도를 3.0% ~ 5.0% 최적 범위로 재배치 보정 중입니다..."):
-                    new_t, new_c, new_stats = llm_router.auto_rebalance_seo_keywords(
-                        title=st.session_state.get("generated_title", ""),
-                        content_html=st.session_state.get("generated_article", "")
-                    )
-                    st.session_state["generated_title"] = new_t
-                    st.session_state["generated_article"] = new_c
-                    st.session_state[key_title] = new_t
-                    st.session_state[key_editor] = clean_html_for_editor(new_c, st.session_state.get("generated_image_paths", []))
-                    st.session_state[key_last_article] = new_c
-                    st.toast("⚡ SEO 키워드 밀도가 최적 범위로 자동 보정되었습니다!", icon="✨")
-                    st.rerun()
-
-        # AI 추천 해시태그 패키지
-        st.markdown("##### 🏷️ AI 추천 상위 노출 해시태그 (네이버 발행 팝업용)")
-        tag_str = " ".join(recommended_hashtags)
-        st.text_input("추천 해시태그 목록", value=tag_str, key=f"{tab_key}_hashtag_input", help="네이버 블로그 [발행] 팝업창의 태그 입력 칸에 복사하여 붙여넣으세요.")
-        
-        if st.button("📋 해시태그 전체 1클릭 복사", key=f"{tab_key}_copy_tags_btn", use_container_width=True):
+    tag_col1, tag_col2 = st.columns([3, 1])
+    with tag_col1:
+        st.text_input("🏷️ AI 추천 상위 노출 해시태그 (네이버 발행 팝업용)", value=tag_str, key=f"{tab_key}_tag_input_clean", help="네이버 블로그 [발행] 팝업창의 태그 입력 칸에 복사하여 붙여넣으세요.")
+    with tag_col2:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("📋 해시태그 1클릭 복사", key=f"{tab_key}_copy_tags_btn_clean", use_container_width=True):
             clipboard_manager.copy_html_to_clipboard(tag_str)
-            st.toast("📋 해시태그가 클립보드에 복사되었습니다! 네이버 [발행] 팝업에 붙여넣으세요.", icon="🏷️")
+            st.toast("📋 추천 해시태그가 클립보드에 복사되었습니다! 네이버 [발행] 팝업에 붙여넣으세요.", icon="🏷️")
 
     sub_tab1, sub_tab2, sub_tab3, sub_tab4 = st.tabs([
         "👁️ 렌더링 미리보기",

@@ -433,7 +433,15 @@ def generate_seo_article(article_title: str, article_content: str, source_url: s
         final_output = re.sub(r'<p[^>]*>\s*\[?원문\s*기사\s*출처.*?<\/p>', '', final_output, flags=re.IGNORECASE | re.DOTALL)
         final_output = re.sub(r'\[?원문\s*기사\s*출처.*?(?:\]|\n|<|$)', '', final_output, flags=re.IGNORECASE)
         final_output += f'<br><p style="color: #888888; font-size: 13px; margin-top: 25px; border-top: 1px solid #eeeeee; padding-top: 10px;">📌 <strong>원문 기사 출처:</strong> <a href="{source_url}" target="_blank" rel="noopener noreferrer" style="color: #03c75a; text-decoration: underline;">{source_url}</a></p>'
-        
+
+    # 🎯 원고 생성 시 내부에서 SEO 키워드 밀도(3~5%)를 100% 자동 최적화 보정
+    density_check = analyze_seo_keyword_density(ai_title, final_output, config)
+    if density_check.get("status") != "OPTIMAL":
+        try:
+            ai_title, final_output, _ = auto_rebalance_seo_keywords(ai_title, final_output, config)
+        except Exception:
+            pass
+
     return {"success": True, "title": ai_title, "content": final_output, "image_paths": used_paths}
 
 def generate_brand_expansion_article(post_category: str, post_outline: str, image_list: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
@@ -466,6 +474,15 @@ def generate_brand_expansion_article(post_category: str, post_outline: str, imag
     ai_title = extract_title_from_raw_llm(raw_output, default_title=default_t)
     
     final_output = sanitize_compliance(raw_output_with_imgs, config)
+
+    # 🎯 원고 생성 시 내부에서 SEO 키워드 밀도(3~5%)를 100% 자동 최적화 보정
+    density_check = analyze_seo_keyword_density(ai_title, final_output, config)
+    if density_check.get("status") != "OPTIMAL":
+        try:
+            ai_title, final_output, _ = auto_rebalance_seo_keywords(ai_title, final_output, config)
+        except Exception:
+            pass
+
     return {"success": True, "title": ai_title, "content": final_output, "image_paths": used_paths}
 
 def generate_mock_fallback(prompt: str, model_name: str, error_msg: str, image_list: Optional[List[Dict[str, Any]]] = None, source_url: str = "") -> str:
