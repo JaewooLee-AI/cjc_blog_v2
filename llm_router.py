@@ -35,8 +35,9 @@ def load_config() -> Dict[str, Any]:
 def format_html_for_naver_editor(html_text: str) -> str:
     """
     네이버 스마트에디터 ONE 서식 호환성을 위한 HTML 포맷터.
-    - 본문 맨 첫 줄의 <h1> (또는 메인 제목 파라그래프)를 제거하여 네이버 본문에 제목이 중복 작성되는 현상 방지
+    - 본문 맨 첫 줄의 <h1> 제거
     - <h2>, <h3>, <p> 태그를 네이버 스마트에디터 최적화 인라인 CSS 스타일로 변환
+    - 모든 취소선(<del>, <s>, <strike>, ~~...~~, line-through) 100% 원천 제거 및 text-decoration: none 강제
     """
     text = html_text.strip()
     
@@ -45,27 +46,27 @@ def format_html_for_naver_editor(html_text: str) -> str:
     text = re.sub(r"^```\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*```$", "", text, flags=re.IGNORECASE)
     
-    # 본문 내 메인 제목 태그(<h1>...</h1>) 완전 제거 (메인 제목은 상단 제목 입력 칸으로만 전송됨)
+    # 본문 내 메인 제목 태그(<h1>...</h1>) 완전 제거
     text = re.sub(r"<h1[^>]*>.*?</h1>", "", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"<p style=\"[^\"]*font-size:\s*2[0-9]px[^\"]*\">.*?</p>(?:<br\s*/?>)?", "", text, flags=re.IGNORECASE | re.DOTALL)
     
-    # 취소선(~~, <del>, <s>, <strike>) 서식 완전 제거 (네이버 에디터 취소선 변환 오작동 방지)
+    # 취소선 서식(~~...~~, <del>, <s>, <strike>) 원천 완전 제거 (태그 껍데기 삭제 및 텍스트 보존)
     text = re.sub(r"~~(.*?)~~", r"\1", text)
-    text = re.sub(r"<(?:del|s|strike)[^>]*>(.*?)</(?:del|s|strike)>", r"\1", text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r"text-decoration:\s*line-through;?", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"</?(?:del|s|strike)\b[^>]*>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"text-decoration\s*:\s*line-through\s*;?", "", text, flags=re.IGNORECASE)
 
-    # <h2> 태그 변환 (소제목 서식)
+    # <h2> 태그 변환 (소제목 서식 - text-decoration: none 명시)
     text = re.sub(
         r"<h2[^>]*>(.*?)</h2>",
-        r'<br><p style="font-size: 18px; font-weight: bold; color: #312E81; margin-top: 20px; margin-bottom: 10px; line-height: 1.5;">\1</p><br>',
+        r'<br><p style="font-size: 18px; font-weight: bold; color: #312E81; margin-top: 20px; margin-bottom: 10px; line-height: 1.5; text-decoration: none;">\1</p><br>',
         text,
         flags=re.IGNORECASE | re.DOTALL
     )
 
-    # <h3> 태그 변환 (세부소제목 서식)
+    # <h3> 태그 변환 (세부소제목 서식 - text-decoration: none 명시)
     text = re.sub(
         r"<h3[^>]*>(.*?)</h3>",
-        r'<br><p style="font-size: 16px; font-weight: bold; color: #4338CA; margin-top: 14px; margin-bottom: 6px; line-height: 1.5;">\1</p><br>',
+        r'<br><p style="font-size: 16px; font-weight: bold; color: #4338CA; margin-top: 14px; margin-bottom: 6px; line-height: 1.5; text-decoration: none;">\1</p><br>',
         text,
         flags=re.IGNORECASE | re.DOTALL
     )

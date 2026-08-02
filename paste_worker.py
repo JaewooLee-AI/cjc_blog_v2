@@ -50,6 +50,77 @@ def ensure_clean_editor_state(editor_frame):
         time.sleep(0.5)
     return False
 
+def ensure_clean_editor_formatting(editor_frame, page):
+    """
+    네이버 스마트에디터 ONE의 취소선(Strikethrough) 툴바 버튼 활성화 여부를 감지하여
+    취소선이 켜져 있으면 자동 해제하고 DOM 내 취소선 태그/스타일을 100% 제거합니다.
+    """
+    try:
+        strike_selectors = [
+            "button.se-strike-toolbar-button",
+            "button[data-name='strike']",
+            ".se-toolbar-button-strike",
+            "button.se-document-toolbar-strike-button",
+            "button:has-text('취소선')"
+        ]
+        for sel in strike_selectors:
+            try:
+                btn = editor_frame.query_selector(sel)
+                if btn:
+                    is_active = editor_frame.evaluate("""(el) => {
+                        return el.classList.contains('is-active') || 
+                               el.classList.contains('se-is-active') || 
+                               el.getAttribute('aria-pressed') === 'true' ||
+                               el.classList.contains('active');
+                    }""", btn)
+                    if is_active:
+                        print("⚠️ Active strikethrough toolbar button detected! Clicking to disable strikethrough...")
+                        btn.click(force=True)
+                        human_delay(0.2, 0.4)
+            except Exception:
+                pass
+
+        editor_frame.evaluate("""() => {
+            const editor = document.querySelector('.se-main-container, .se-content, body');
+            if (!editor) return;
+            const strikes = editor.querySelectorAll('s, del, strike, [style*="line-through"], .se-text-node-strike');
+            strikes.forEach(el => {
+                el.style.textDecoration = 'none';
+                el.classList.remove('se-text-node-strike');
+                const parent = el.parentNode;
+                if (parent) {
+                    while (el.firstChild) parent.insertBefore(el.firstChild, el);
+                    parent.removeChild(el);
+                }
+            });
+        }""")
+        print("✅ Cleaned any lingering strikethrough styles from editor DOM!")
+    except Exception as e:
+        print(f"ensure_clean_editor_formatting note: {e}")
+
+def cleanup_pasted_strikethrough(editor_frame):
+    """붙여넣기 직후 네이버 에디터 DOM에 자동 부여된 취소선 태그 및 CSS 클래스 100% 강제 해제"""
+    try:
+        editor_frame.evaluate("""() => {
+            const editor = document.querySelector('.se-main-container, .se-content, body');
+            if (!editor) return;
+            const strikes = editor.querySelectorAll('s, del, strike, .se-text-node-strike, [style*="line-through"]');
+            strikes.forEach(el => {
+                el.style.textDecoration = 'none';
+                el.classList.remove('se-text-node-strike');
+                const parent = el.parentNode;
+                if (parent) {
+                    while (el.firstChild) {
+                        parent.insertBefore(el.firstChild, el);
+                    }
+                    parent.removeChild(el);
+                }
+            });
+        }""")
+        print("✅ Executed post-paste strikethrough DOM purge successfully!")
+    except Exception as e:
+        print(f"cleanup_pasted_strikethrough note: {e}")
+
 def launch_browser(p, headless: bool = False, args: list = None):
     """macOS Crashpad 및 Mach Port 권한 충돌 방지를 위한 안전 브라우저 구동 모듈"""
     if args is None:
@@ -312,13 +383,16 @@ def run_worker():
 
             # 본문 붙여넣기
             try:
+                # 1. 붙여넣기 전 네이버 툴바 취소선 버튼 활성화 여부 검사 및 DOM 취소선 태그 사전 완전 청소
+                ensure_clean_editor_formatting(editor_frame, page)
+
                 # 본문 영역 찾기
                 body_el = editor_frame.query_selector(".se-main-container, .se-component-text, .se-content, .se-module-text")
                 if body_el:
                     body_el.click(force=True)
                     human_delay(0.5, 0.8)
 
-                    # 기존 내용 전체 선택 및 삭제 (취소선 방지)
+                    # 기존 내용 전체 선택 및 삭제
                     page.keyboard.press(f"{modifier}+a")
                     human_delay(0.2, 0.4)
                     page.keyboard.press("Delete")
@@ -326,13 +400,21 @@ def run_worker():
                     page.keyboard.press("Backspace")
                     human_delay(0.2, 0.4)
 
+                    # 취소선 해제 재확인
+                    ensure_clean_editor_formatting(editor_frame, page)
+
                     # 새로운 내용 붙여넣기
                     page.keyboard.press(f"{modifier}+v")
                     human_delay(1.0, 1.5)
+
+                    # 2. 붙여넣기 직후 네이버 스마트에디터가 강제 부착한 모든 취소선 CSS 및 DOM 태그 100% 강제 해제
+                    cleanup_pasted_strikethrough(editor_frame)
                 else:
                     # 본문 영역을 못 찾은 경우 그냥 붙여넣기 시도
+                    ensure_clean_editor_formatting(editor_frame, page)
                     page.keyboard.press(f"{modifier}+v")
                     human_delay(1.0, 1.5)
+                    cleanup_pasted_strikethrough(editor_frame)
             except Exception as e:
                 print(f"Body paste error: {e}")
 

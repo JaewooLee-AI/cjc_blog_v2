@@ -44,6 +44,11 @@ def copy_html_to_clipboard(html_content: str, for_word: bool = False) -> bool:
     - for_word=True: MS Word / 한글(HWP)용 (Base64 -> file:///... 경로 변환)
     - for_word=False: 네이버 스마트에디터 ONE 전용 (Base64 data:image/png 인라인 이미지 유지)
     """
+    # 네이버 에디터 취소선 변환 오작동 원천 차단 (del, s, strike, line-through 서식 완전 제거)
+    html_content = re.sub(r"~~(.*?)~~", r"\1", html_content)
+    html_content = re.sub(r"</?(?:del|s|strike)\b[^>]*>", "", html_content, flags=re.IGNORECASE)
+    html_content = re.sub(r"text-decoration\s*:\s*line-through\s*;?", "", html_content, flags=re.IGNORECASE)
+
     if for_word:
         html_content = prepare_html_for_clipboard(html_content)
 
